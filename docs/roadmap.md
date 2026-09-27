@@ -15,6 +15,16 @@
 そのため **iOS 側（UI を含む）と WebRTC の核心部分は 🧑‍💻 を多め** にしている。
 Android の UI は Claude に任せ、iOS の UI（SwiftUI）は自分で実装する。
 
+## 進める順番
+
+**Android を先行して M1〜M6 を一通り完成させ、その後 iOS で同じ道をたどる。**
+
+1. Android で M1〜M6（Android ⇄ Android で全機能が動く状態）
+2. iOS で M0〜M6（Android で理解した WebRTC の流れを、Swift / iOS の API で書き直す）
+3. M7（iOS ⇄ Android の相互接続と実環境テスト）
+
+WebRTC の概念を慣れている Android で先に理解しておくことで、iOS では言語と API の学習に集中できる。
+
 ---
 
 ## M0. プロジェクトの土台
