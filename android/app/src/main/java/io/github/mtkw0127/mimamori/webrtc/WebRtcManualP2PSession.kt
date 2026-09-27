@@ -98,7 +98,7 @@ class WebRtcManualP2PSession @Inject constructor(
 
     override suspend fun acceptOfferAndCreateAnswer(offerSdp: String): String {
         val connection = createPeerConnection()
-        val offer = SessionDescription(SessionDescription.Type.OFFER, offerSdp)
+        val offer = SessionDescription(SessionDescription.Type.OFFER, offerSdp.toSdpLineEndings())
         connection.setRemoteDescriptionSuspend(offer)
 
         val answer = connection.createAnswerSuspend()
@@ -111,9 +111,25 @@ class WebRtcManualP2PSession @Inject constructor(
         peerConnection?.setRemoteDescriptionSuspend(
             SessionDescription(
                 SessionDescription.Type.ANSWER,
-                answerSdp
+                answerSdp.toSdpLineEndings(),
             )
         )
+    }
+
+    /**
+     * コピー＆ペーストを経由すると、SDP が要求する `\r\n`（CRLF）の改行が
+     * クリップボードや TextField によって `\n`（LF）だけに変わってしまうことがある。
+     * それを元の CRLF に戻す（既に CRLF ならそのまま）。
+     *
+     * さらに `ManualP2PViewModel.onApplyRemoteSdp()` が呼ぶ `.trim()` によって、
+     * SDP が本来持っているべき末尾の改行が削られてしまう。末尾の改行が無いと
+     * 最後の行（多くは `a=ssrc:...`）が正しく解釈されず、SDP 全体の parse が失敗して
+     * 「SessionDescription is Null」というエラーになる。そのため、末尾の改行が無ければ
+     * ここで必ず付け直す。
+     */
+    private fun String.toSdpLineEndings(): String {
+        val normalized = trim().replace("\r\n", "\n").replace("\n", "\r\n")
+        return if (normalized.endsWith("\r\n")) normalized else normalized + "\r\n"
     }
 
     override fun close() {
@@ -148,7 +164,7 @@ class WebRtcManualP2PSession @Inject constructor(
                 override fun onSetSuccess() = cont.resume(Unit)
 
                 override fun onSetFailure(p0: String?) = cont.resumeWithException(
-                    IllegalStateException("リモートから送信されたSDPを設定できませんでした")
+                    IllegalStateException("リモートから送信されたSDPを設定できませんでした, $p0")
                 )
 
                 override fun onCreateSuccess(p0: SessionDescription?) = Unit

@@ -42,9 +42,13 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import org.webrtc.RendererCommon
+import org.webrtc.SurfaceViewRenderer
+import org.webrtc.VideoTrack
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +58,8 @@ fun ManualP2PScreen(
     viewModel: ManualP2PViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val localVideoTrack by viewModel.localVideoTrack.collectAsStateWithLifecycle()
+    val isFrontFacingCamera by viewModel.isFrontFacingCamera.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -63,10 +69,6 @@ fun ManualP2PScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.onErrorShown()
         }
-    }
-
-    LaunchedEffect(Unit) {
-
     }
 
     Scaffold(
@@ -146,16 +148,43 @@ fun ManualP2PScreen(
                 }
             }
 
-            // TODO(M1 / M2: あなたが実装): 映像の表示
-            //  Offerer はローカルプレビュー、Answerer は onTrack で受け取った相手の映像を SurfaceViewRenderer で表示する。
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(9f / 16f)
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("映像（M1 / M2 で実装）", color = Color.White)
+            // Offerer は自分のカメラ映像（LocalCameraSession）、Answerer は相手から届いた映像（onTrack）を表示する
+            val videoTrack: VideoTrack? =
+                if (role == ManualP2PRole.Offerer) localVideoTrack else uiState.remoteVideoTrack
+            if (videoTrack != null) {
+                AndroidView(
+                    factory = { context ->
+                        SurfaceViewRenderer(context).apply {
+                            init(viewModel.eglBase.eglBaseContext, null)
+                            setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+                        }
+                    },
+                    update = { view ->
+                        // 自分のフロントカメラだけ左右反転する（相手の映像は反転しない）
+                        view.setMirror(role == ManualP2PRole.Offerer && isFrontFacingCamera == true)
+                        videoTrack.addSink(view)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(9f / 16f),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(9f / 16f)
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (role == ManualP2PRole.Offerer) {
+                            "カメラを起動しています…"
+                        } else {
+                            "相手からの映像を待っています…"
+                        },
+                        color = Color.White,
+                    )
+                }
             }
         }
     }

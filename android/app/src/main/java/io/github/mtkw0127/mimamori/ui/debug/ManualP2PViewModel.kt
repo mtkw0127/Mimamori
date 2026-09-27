@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.mtkw0127.mimamori.webrtc.LocalCameraSession
 import io.github.mtkw0127.mimamori.webrtc.ManualP2PSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.webrtc.EglBase
 import org.webrtc.PeerConnection
 import org.webrtc.VideoTrack
 import javax.inject.Inject
@@ -39,12 +41,18 @@ class ManualP2PViewModel @Inject constructor(
     application: Application,
     savedStateHandle: SavedStateHandle,
     private val session: ManualP2PSession,
+    val eglBase: EglBase,
+    private val cameraSession: LocalCameraSession,
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(
         ManualP2PUiState(role = ManualP2PRole.valueOf(checkNotNull(savedStateHandle.get<String>("role")))),
     )
     val uiState: StateFlow<ManualP2PUiState> = _uiState.asStateFlow()
+
+    /** Offerer 側で表示する、自分のカメラ映像（Answerer は使わない） */
+    val localVideoTrack: StateFlow<VideoTrack?> = cameraSession.videoTrack
+    val isFrontFacingCamera: StateFlow<Boolean?> = cameraSession.isFrontFacingCamera
 
     init {
         viewModelScope.launch {
