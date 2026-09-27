@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -155,6 +157,7 @@ private fun CameraPreview(
     val isFrontFacingCamera by viewModel.isFrontFacingCamera.collectAsStateWithLifecycle()
     val currentCameraDeviceName by viewModel.currentCameraDeviceName.collectAsStateWithLifecycle()
     val availableCameras by viewModel.availableCameras.collectAsStateWithLifecycle()
+    val zoomInfo by viewModel.zoomInfo.collectAsStateWithLifecycle()
     var cameraNotFound by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -200,21 +203,41 @@ private fun CameraPreview(
             }
         }
 
-        // 段階ズーム: 端末が複数レンズを持っている場合だけ、切り替えの行を表示する
-        if (availableCameras.size > 1) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(16.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                availableCameras.forEach { option ->
-                    FilterChip(
-                        selected = option.deviceName == currentCameraDeviceName,
-                        onClick = { viewModel.switchCamera(option.deviceName) },
-                        label = { Text(option.label) },
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // 連続ズーム: 今のレンズがズームに対応しているときだけスライダーを出す
+            zoomInfo?.takeIf { it.maxRatio > it.minRatio }?.let { zoom ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Slider(
+                        value = zoom.ratio,
+                        onValueChange = { viewModel.setZoomRatio(it) },
+                        valueRange = zoom.minRatio..zoom.maxRatio,
+                        modifier = Modifier.width(160.dp),
                     )
+                    Text("%.1fx".format(zoom.ratio), color = Color.White)
+                }
+            }
+
+            // 段階ズーム: 端末が複数レンズを持っている場合だけ、切り替えの行を表示する
+            if (availableCameras.size > 1) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    availableCameras.forEach { option ->
+                        FilterChip(
+                            selected = option.deviceName == currentCameraDeviceName,
+                            onClick = { viewModel.switchCamera(option.deviceName) },
+                            label = { Text(option.label) },
+                        )
+                    }
                 }
             }
         }

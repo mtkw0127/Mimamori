@@ -24,10 +24,13 @@ class RecorderViewModel @Inject constructor(
 
     /** 端末が持つレンズの一覧。撮影を開始するまでは空リスト */
     val availableCameras: StateFlow<List<LocalCameraSession.CameraOption>> = cameraSession.availableCameras
+    val zoomInfo: StateFlow<LocalCameraSession.ZoomInfo?> = cameraSession.zoomInfo
 
     suspend fun start() = cameraSession.start()
 
     fun stop() = cameraSession.stop()
 
     fun switchCamera(deviceName: String) = cameraSession.switchTo(deviceName)
+
+    fun setZoomRatio(ratio: Float) = cameraSession.setZoomRatio(ratio)
 }

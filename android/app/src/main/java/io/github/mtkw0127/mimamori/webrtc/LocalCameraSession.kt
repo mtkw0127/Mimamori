@@ -11,12 +11,14 @@ import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.ZoomState
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.Observer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,10 +71,16 @@ class LocalCameraSession @Inject constructor(
     private val _availableCameras = MutableStateFlow<List<CameraOption>>(emptyList())
     val availableCameras: StateFlow<List<CameraOption>> = _availableCameras.asStateFlow()
 
+    /** 今のズーム倍率と、そのレンズが取れる範囲。カメラが動いていないときは null */
+    private val _zoomInfo = MutableStateFlow<ZoomInfo?>(null)
+    val zoomInfo: StateFlow<ZoomInfo?> = _zoomInfo.asStateFlow()
+
     private var cameraProvider: ProcessCameraProvider? = null
     private var lifecycleOwner: CaptureLifecycleOwner? = null
     private var analysisExecutor: ExecutorService? = null
     private var videoSource: VideoSource? = null
+    private var boundCamera: Camera? = null
+    private var zoomStateObserver: Observer<ZoomState>? = null
 
     data class CameraOption(
         val deviceName: String,
@@ -80,6 +88,8 @@ class LocalCameraSession @Inject constructor(
         /** 「背面(超広角)」「前面」のような画面表示用のラベル */
         val label: String,
     )
+
+    data class ZoomInfo(val ratio: Float, val minRatio: Float, val maxRatio: Float)
 
     sealed class LocalCameraSessionStartException(message: String) : Exception(message) {
         class CameraNotFoundException :
@@ -108,7 +118,16 @@ class LocalCameraSession @Inject constructor(
         bind(provider, deviceName)
     }
 
+    /** ズーム倍率を変更する。[ZoomInfo.minRatio]〜[ZoomInfo.maxRatio] の範囲に丸める */
+    fun setZoomRatio(ratio: Float) {
+        val camera = boundCamera ?: return
+        val zoom = _zoomInfo.value ?: return
+        camera.cameraControl.setZoomRatio(ratio.coerceIn(zoom.minRatio, zoom.maxRatio))
+    }
+
     fun stop() {
+        detachZoomObserver()
+        boundCamera = null
         lifecycleOwner?.destroy()
         lifecycleOwner = null
         analysisExecutor?.shutdown()
@@ -119,12 +138,14 @@ class LocalCameraSession @Inject constructor(
         _videoTrack.value = null
         _isFrontFacingCamera.value = null
         _currentCameraDeviceName.value = null
+        _zoomInfo.value = null
     }
 
     @OptIn(ExperimentalCamera2Interop::class)
     private fun bind(provider: ProcessCameraProvider, deviceName: String) {
         // 前のレンズを解放してから、新しいレンズに繋ぎ直す
         // （CameraX は LifecycleOwner が DESTROYED になった use case を自動で unbind してくれる）
+        detachZoomObserver()
         lifecycleOwner?.destroy()
         analysisExecutor?.shutdown()
 
@@ -154,12 +175,32 @@ class LocalCameraSession @Inject constructor(
 
         owner.start()
         val camera = provider.bindToLifecycle(owner, selector, analysis)
+        boundCamera = camera
+        attachZoomObserver(camera)
         val isFront = isFrontFacing(camera)
 
         capturerObserver.onCapturerStarted(true)
         _isFrontFacingCamera.value = isFront
         _currentCameraDeviceName.value = deviceName
         _videoTrack.value = _videoTrack.value ?: factory.createVideoTrack("VIDEO_TRACK_ID", source)
+    }
+
+    /** レンズを切り替えるたびに、そのレンズのズーム範囲を [zoomInfo] に反映させる */
+    private fun attachZoomObserver(camera: Camera) {
+        val observer = Observer<ZoomState> { state ->
+            _zoomInfo.value = ZoomInfo(state.zoomRatio, state.minZoomRatio, state.maxZoomRatio)
+        }
+        zoomStateObserver = observer
+        camera.cameraInfo.zoomState.observeForever(observer)
+    }
+
+    private fun detachZoomObserver() {
+        val camera = boundCamera
+        val observer = zoomStateObserver
+        if (camera != null && observer != null) {
+            camera.cameraInfo.zoomState.removeObserver(observer)
+        }
+        zoomStateObserver = null
     }
 
     private fun analyzeFrame(image: ImageProxy, capturerObserver: CapturerObserver) {
