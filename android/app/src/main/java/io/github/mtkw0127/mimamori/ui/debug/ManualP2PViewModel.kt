@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.webrtc.PeerConnection
+import org.webrtc.VideoTrack
 import javax.inject.Inject
 
 enum class ManualP2PRole {
@@ -28,6 +29,7 @@ data class ManualP2PUiState(
     val localSdp: String = "",
     val remoteSdpInput: String = "",
     val connectionState: PeerConnection.PeerConnectionState = PeerConnection.PeerConnectionState.NEW,
+    val remoteVideoTrack: VideoTrack? = null,
     val isBusy: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -48,6 +50,11 @@ class ManualP2PViewModel @Inject constructor(
         viewModelScope.launch {
             session.connectionState.collect { state ->
                 _uiState.update { it.copy(connectionState = state) }
+            }
+        }
+        viewModelScope.launch {
+            session.remoteVideoTrack.collect { vt ->
+                _uiState.update { it.copy(remoteVideoTrack = vt) }
             }
         }
     }

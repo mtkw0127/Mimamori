@@ -6,6 +6,8 @@
     <!-- LAN 内での Recorder / Viewer 間の通信（TCP・WebRTC） -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- WebRTC が ICE Candidate 収集のために Wi-Fi のネットワーク情報を取得するのに必要 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- Viewer 専用端末（カメラなし）にもインストールできるよう必須にしない -->
     <uses-feature

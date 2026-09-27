@@ -2,6 +2,7 @@ package io.github.mtkw0127.mimamori.webrtc
 
 import kotlinx.coroutines.flow.StateFlow
 import org.webrtc.PeerConnection
+import org.webrtc.VideoTrack
 
 /**
  * M2: 自動発見・シグナリング（M3）の前段階として、SDP を手動でコピー＆ペーストして P2P 接続するためのセッション。
@@ -15,6 +16,9 @@ import org.webrtc.PeerConnection
  * このインターフェースは UI との接点として用意したもの。実装してみて使いにくければ自由に変えてよい。
  */
 interface ManualP2PSession {
+    /** Viewerの映像Track*/
+    val remoteVideoTrack: StateFlow<VideoTrack?>
+
     /** 接続状態。画面にそのまま表示する */
     val connectionState: StateFlow<PeerConnection.PeerConnectionState>
 

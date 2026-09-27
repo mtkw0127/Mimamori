@@ -14,26 +14,24 @@ import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.webrtc.VideoTrack
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * TODO(M2: あなたが実装): [ManualP2PSession] の WebRTC 実装。
+ * [ManualP2PSession] の WebRTC 実装。
  *
  * `factory` / `eglBase` / `cameraSession` は Hilt がアプリ全体で共有しているインスタンスを渡してくる
- * （それぞれ [WebRtcModule] / [LocalCameraSession] 参照）。ここで新しく作り直さないこと。
+ * （それぞれ [WebRtcModule] / [LocalCameraSession] 参照）。
  *
- * 取り組む順番のヒント（詳細は docs/architecture.md §2, docs/roadmap.md M2）:
- *  1. RTCConfiguration（同一 LAN なので iceServers は空でよい）で PeerConnection を作る
- *  2. Offerer は [cameraSession] の `start()` を呼び、`videoTrack` を `addTrack` する
- *  3. offer / answer の作成と setLocalDescription / setRemoteDescription
- *     （コールバック API を suspend 関数にするには suspendCancellableCoroutine が便利）
- *  4. iceGatheringState が COMPLETE になるのを待ってから localDescription を返す
- *  5. Answerer は onTrack で受け取った VideoTrack を SurfaceViewRenderer に表示する
+ * 同一 LAN 内での接続なので STUN/TURN は使わず、`RTCConfiguration` の `iceServers` は空にしている
+ * （docs/architecture.md §2）。offer/answer の作成は `suspendCancellableCoroutine` で
+ * `SdpObserver`/`PeerConnection.Observer` のコールバックを `suspend fun` として扱っている。
  */
 class WebRtcManualP2PSession @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -43,7 +41,11 @@ class WebRtcManualP2PSession @Inject constructor(
 ) : ManualP2PSession {
 
     private var peerConnection: PeerConnection? = null
+    private var peerConnectionObserver: PeerConnection.Observer? = null
     private var iceGatheringComplete: CompletableDeferred<Unit>? = null
+
+    private val _remoteVideoTrack = MutableStateFlow<VideoTrack?>(null)
+    override val remoteVideoTrack: StateFlow<VideoTrack?> = _remoteVideoTrack
 
     private val _connectionState = MutableStateFlow(PeerConnection.PeerConnectionState.NEW)
     override val connectionState: StateFlow<PeerConnection.PeerConnectionState> =
@@ -95,19 +97,70 @@ class WebRtcManualP2PSession @Inject constructor(
     }
 
     override suspend fun acceptOfferAndCreateAnswer(offerSdp: String): String {
-        TODO("M2: offer を受け取り answer を作成する")
+        val connection = createPeerConnection()
+        val offer = SessionDescription(SessionDescription.Type.OFFER, offerSdp)
+        connection.setRemoteDescriptionSuspend(offer)
+
+        val answer = connection.createAnswerSuspend()
+        connection.setLocalDescription(answer)
+        iceGatheringComplete?.await()
+        return connection.localDescription.description
     }
 
     override suspend fun acceptAnswer(answerSdp: String) {
-        TODO("M2: answer を受け取る")
+        peerConnection?.setRemoteDescriptionSuspend(
+            SessionDescription(
+                SessionDescription.Type.ANSWER,
+                answerSdp
+            )
+        )
     }
 
     override fun close() {
         peerConnection?.close()
         peerConnection = null
+
+        cameraSession.stop()
+    }
+
+    private suspend fun PeerConnection.createAnswerSuspend(): SessionDescription {
+        return suspendCancellableCoroutine { cont ->
+            val observer = object : SdpObserver {
+                override fun onSetSuccess() = Unit
+
+                override fun onSetFailure(p0: String?) = Unit
+
+                override fun onCreateSuccess(sdp: SessionDescription?) {
+                    sdp?.let { cont.resume(sdp) }
+                }
+
+                override fun onCreateFailure(p0: String?) = cont.resumeWithException(
+                    IllegalStateException("Answerの作成に失敗しました")
+                )
+            }
+            createAnswer(observer, MediaConstraints())
+        }
+    }
+
+    private suspend fun PeerConnection.setRemoteDescriptionSuspend(sdp: SessionDescription) {
+        return suspendCancellableCoroutine { cont ->
+            val observer = object : SdpObserver {
+                override fun onSetSuccess() = cont.resume(Unit)
+
+                override fun onSetFailure(p0: String?) = cont.resumeWithException(
+                    IllegalStateException("リモートから送信されたSDPを設定できませんでした")
+                )
+
+                override fun onCreateSuccess(p0: SessionDescription?) = Unit
+
+                override fun onCreateFailure(p0: String?) = Unit
+            }
+            setRemoteDescription(observer, sdp)
+        }
     }
 
     private fun createPeerConnection(): PeerConnection {
+        if (peerConnection != null) return checkNotNull(peerConnection)
         iceGatheringComplete = CompletableDeferred()
         val rtcConfig = PeerConnection.RTCConfiguration(emptyList())
         val observer = object : PeerConnection.Observer {
@@ -118,12 +171,12 @@ class WebRtcManualP2PSession @Inject constructor(
             }
 
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                Timber.d("state=${state?.name} [PeerConnection.Observer.onIceConnectionChange]")
+                Timber.d("iceConnectionState=${state?.name}")
             }
 
             override fun onSignalingChange(newState: PeerConnection.SignalingState?) = Unit
 
-            override fun onIceConnectionReceivingChange(p0: Boolean) = Unit
+            override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
 
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
                 if (state == PeerConnection.IceGatheringState.COMPLETE) {
@@ -131,18 +184,28 @@ class WebRtcManualP2PSession @Inject constructor(
                 }
             }
 
-            override fun onIceCandidate(p0: IceCandidate?) = Unit
+            override fun onIceCandidate(candidate: IceCandidate?) = Unit
 
-            override fun onIceCandidatesRemoved(p0: Array<out IceCandidate?>?) = Unit
+            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate?>?) = Unit
 
-            override fun onAddStream(p0: MediaStream?) = Unit
+            override fun onAddStream(stream: MediaStream?) = Unit
 
-            override fun onRemoveStream(p0: MediaStream?) = Unit
+            override fun onRemoveStream(stream: MediaStream?) = Unit
 
-            override fun onDataChannel(p0: DataChannel?) = Unit
+            override fun onDataChannel(dataChannel: DataChannel?) = Unit
 
             override fun onRenegotiationNeeded() = Unit
+
+            override fun onTrack(transceiver: RtpTransceiver?) {
+                val track = transceiver?.receiver?.track()
+                if (track is VideoTrack) {
+                    _remoteVideoTrack.value = track
+                }
+            }
         }
+        // native 側は observer への JNI 参照を保持するが、Java/Kotlin 側からの強参照が無いと
+        // GC で回収されコールバックが届かなくなることがあるため、フィールドに保持しておく
+        peerConnectionObserver = observer
         peerConnection = factory.createPeerConnection(rtcConfig, observer)
         return checkNotNull(peerConnection)
     }
