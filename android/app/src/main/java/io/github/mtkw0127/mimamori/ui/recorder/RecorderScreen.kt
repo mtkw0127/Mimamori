@@ -1,7 +1,6 @@
 package io.github.mtkw0127.mimamori.ui.recorder
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -10,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -40,15 +38,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import org.webrtc.Camera2Enumerator
-import org.webrtc.EglBase
-import org.webrtc.PeerConnectionFactory
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.mtkw0127.mimamori.webrtc.LocalCameraSession
 import org.webrtc.RendererCommon
-import org.webrtc.SurfaceTextureHelper
 import org.webrtc.SurfaceViewRenderer
-import org.webrtc.VideoCapturer
-import org.webrtc.VideoSource
-import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,168 +54,142 @@ fun RecorderScreen(
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED,
+                    PackageManager.PERMISSION_GRANTED,
         )
     }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> hasCameraPermission = granted }
 
+    val isLandscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Recorder") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
-                },
-            )
+            // 横向きのときは TopAppBar 自体を消して、プレビューが画面いっぱいに見えるようにする
+            if (!isLandscape) {
+                TopAppBar(
+                    title = { Text("Recorder") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        }
+                    },
+                )
+            }
         },
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            if (hasCameraPermission) {
-                PreviewPlaceholder()
-            } else {
-                Text("映像を撮影するにはカメラの権限が必要です。", style = MaterialTheme.typography.bodyLarge)
-                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                    Text("カメラの権限を許可する")
-                }
-            }
-            OutlinedButton(onClick = onOpenManualP2P, modifier = Modifier.fillMaxWidth()) {
-                Text("[開発用] 手動 P2P 接続（M2）")
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreviewPlaceholder() {
-    val context = LocalContext.current
-    val eglBase = remember { EglBase.create() }
-    val factory = remember {
-        // 1. WebRTC全体の司令塔（PeerConnectionFactory）を用意
-        val initializationOptions = PeerConnectionFactory.InitializationOptions
-            .builder(context) // ApplicationContext を渡す
-            .setEnableInternalTracer(true) // 内部のトレース（ログ）機能を有効にするか
-            .createInitializationOptions()
-        PeerConnectionFactory.initialize(initializationOptions)
-        PeerConnectionFactory.builder().createPeerConnectionFactory()
-    }
-    val videoCapture = remember {
-        createCameraCapturer(context)
-    }
-    val videoSource = remember {
-        factory.createVideoSource(videoCapture?.isScreencast ?: return@remember null)
-    }
-    val surfaceTextureHelper = remember {
-        if(videoSource == null) return@remember null
-        SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
-    }
-    val videoTrack = remember {
-        if(videoCapture == null || videoSource == null) return@remember null
-        // 4. ソースを元に、ようやく「VideoTrack」が完成！
-        factory.createVideoTrack("VIDEO_TRACK_ID", videoSource)
-    }
-    val initialized = remember {
-        if(videoSource != null && videoCapture != null && videoTrack != null) {
-            videoCapture.initialize(
-                surfaceTextureHelper,
-                context,
-                videoSource.capturerObserver // これにより Source と Capturer が結びつきます
-            )
-            videoCapture.startCapture(1280, 720, 15) // 解像度とFPSを指定
-            true
-        } else {
-            false
-        }
-    }
-    val configuration = LocalConfiguration.current
-    val aspectRatio = remember(configuration.orientation) {
-        if(configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            9f / 16f
-        } else {
-            16f / 9f
-        }
-    }
-
-    when(initialized) {
-        true -> {
-            AndroidView(
-                factory = { context ->
-                    SurfaceViewRenderer(context).apply {
-                        init(eglBase.eglBaseContext, null)
-                        setMirror(true)
-                        setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-                    }
-                },
-                update = { view ->
-                    checkNotNull(videoTrack).addSink(view)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(aspectRatio)
-            )
-            DisposableEffect(Unit) {
-                onDispose {
-                    eglBase.release()
-                    try {
-                        videoCapture?.stopCapture()
-                    } catch (e: InterruptedException) {
-                        Timber.w(e)
-                    }
-                    videoCapture?.dispose()
-                    surfaceTextureHelper?.dispose()
-                    videoSource?.dispose()
-                    factory.dispose()
-                }
-            }
-        }
-        false -> {
+        if (hasCameraPermission && isLandscape) {
+            // 開発用の手動 P2P 接続ボタンと、TopAppBar の代わりの戻るボタンを
+            // プレビューの上に浮かせて表示する
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(aspectRatio)
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center,
+                    .fillMaxSize()
+                    .padding(innerPadding),
             ) {
-                Text("カメラを見つけることができませんでした", color = Color.White)
+                CameraPreview(modifier = Modifier.fillMaxSize())
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "戻る",
+                        tint = Color.White,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onOpenManualP2P,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                ) {
+                    Text("[開発用] 手動 P2P 接続（M2）")
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (hasCameraPermission) {
+                    CameraPreview(modifier = Modifier.weight(1f))
+                } else {
+                    Text(
+                        "映像を撮影するにはカメラの権限が必要です。",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                        Text("カメラの権限を許可する")
+                    }
+                }
+
+                OutlinedButton(onClick = onOpenManualP2P, modifier = Modifier.fillMaxWidth()) {
+                    Text("[開発用] 手動 P2P 接続（M2）")
+                }
             }
         }
     }
 }
 
-// アウトカメラを優先して探す
-private fun createCameraCapturer(context: Context): VideoCapturer? {
-    val enumerator = Camera2Enumerator(context)
-    val deviceNames = enumerator.deviceNames
+/**
+ * [RecorderViewModel] 経由で [LocalCameraSession] を使い、カメラ映像をプレビュー表示する。
+ * カメラの生成・解放そのものはこの画面が入る/出るタイミングで [RecorderViewModel] に依頼するだけで、
+ * 実際の WebRTC のオブジェクト操作は [LocalCameraSession] 側に閉じている。
+ */
+@Composable
+private fun CameraPreview(
+    modifier: Modifier = Modifier,
+    viewModel: RecorderViewModel = hiltViewModel(),
+) {
+    val videoTrack by viewModel.videoTrack.collectAsStateWithLifecycle()
+    val isFrontFacingCamera by viewModel.isFrontFacingCamera.collectAsStateWithLifecycle()
+    var cameraNotFound by remember { mutableStateOf(false) }
 
-    for (deviceName in deviceNames) {
-        if (enumerator.isBackFacing(deviceName)) {
-            val videoCapturer = enumerator.createCapturer(deviceName, null)
-            if (videoCapturer != null) {
-                return videoCapturer
-            }
+    LaunchedEffect(Unit) {
+        try {
+            viewModel.start()
+        } catch (_: LocalCameraSession.LocalCameraSessionStartException.CameraNotFoundException) {
+            cameraNotFound = true
         }
     }
-
-    for (deviceName in deviceNames) {
-        if (enumerator.isFrontFacing(deviceName)) {
-            // インカメラ用のキャプチャを作成して返す
-            val videoCapturer = enumerator.createCapturer(deviceName, null)
-            if (videoCapturer != null) {
-                return videoCapturer
-            }
-        }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.stop() }
     }
 
-    // カメラが見つからない場合
-    return null
+    if (videoTrack != null) {
+        AndroidView(
+            factory = { context ->
+                SurfaceViewRenderer(context).apply {
+                    init(viewModel.eglBase.eglBaseContext, null)
+                    // Column の weight で割り当てられた領域いっぱいに映像を表示するので、
+                    // 画面の向きに合わせて Compose 側でアスペクト比を計算する必要はない
+                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+                }
+            },
+            update = { view ->
+                // フロントカメラのときだけ左右反転する（背面カメラは反転しない）
+                view.setMirror(isFrontFacingCamera == true)
+                videoTrack?.addSink(view)
+            },
+            modifier = modifier.fillMaxWidth(),
+        )
+    } else {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (cameraNotFound) "カメラを見つけることができませんでした" else "カメラを起動しています…",
+                color = Color.White,
+            )
+        }
+    }
 }
-

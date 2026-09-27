@@ -45,6 +45,10 @@ class LocalCameraSession @Inject constructor(
     private val _videoTrack = MutableStateFlow<VideoTrack?>(null)
     val videoTrack: StateFlow<VideoTrack?> = _videoTrack.asStateFlow()
 
+    /** 今使っているカメラがフロント（インカメラ）かどうか。カメラが動いていないときは null */
+    private val _isFrontFacingCamera = MutableStateFlow<Boolean?>(null)
+    val isFrontFacingCamera: StateFlow<Boolean?> = _isFrontFacingCamera.asStateFlow()
+
     private val _videoCapture = MutableStateFlow<VideoCapturer?>(null)
     private val _videoSource = MutableStateFlow<VideoSource?>(null)
     private val _surfaceTextHelper = MutableStateFlow<SurfaceTextureHelper?>(null)
@@ -55,23 +59,22 @@ class LocalCameraSession @Inject constructor(
     }
 
     fun start() {
-        _videoCapture.value = createCameraCapturer(context)
-        _videoSource.value =
-            factory.createVideoSource(
-                _videoCapture.value?.isScreencast
-                    ?: throw LocalCameraSessionStartException.CameraNotFoundException()
-            )
+        val (capturer, isFrontFacing) = createCameraCapturer(context)
+            ?: throw LocalCameraSessionStartException.CameraNotFoundException()
+        _videoCapture.value = capturer
+        _isFrontFacingCamera.value = isFrontFacing
+        _videoSource.value = factory.createVideoSource(capturer.isScreencast)
         _surfaceTextHelper.value = SurfaceTextureHelper.create(
             "CaptureThread",
             eglBase.eglBaseContext
         )
         _videoTrack.value = factory.createVideoTrack("VIDEO_TRACK_ID", _videoSource.value)
-        checkNotNull(_videoCapture.value).initialize(
+        capturer.initialize(
             _surfaceTextHelper.value,
             context,
             checkNotNull(_videoSource.value).capturerObserver // これにより Source と Capturer が結びつきます
         )
-        checkNotNull(_videoCapture.value).startCapture(1280, 720, 15) // 解像度とFPSを指定
+        capturer.startCapture(1280, 720, 15) // 解像度とFPSを指定
     }
 
     fun stop() {
@@ -88,10 +91,14 @@ class LocalCameraSession @Inject constructor(
         _surfaceTextHelper.value = null
         _videoSource.value = null
         _videoTrack.value = null
+        _isFrontFacingCamera.value = null
     }
 
+    /** どのカメラを掴んだかを、映像そのものと合わせて返す */
+    private data class CapturerWithFacing(val capturer: VideoCapturer, val isFrontFacing: Boolean)
+
     // アウトカメラを優先して探す
-    private fun createCameraCapturer(context: Context): VideoCapturer? {
+    private fun createCameraCapturer(context: Context): CapturerWithFacing? {
         val enumerator = Camera2Enumerator(context)
         val deviceNames = enumerator.deviceNames
 
@@ -99,7 +106,7 @@ class LocalCameraSession @Inject constructor(
             if (enumerator.isBackFacing(deviceName)) {
                 val videoCapturer = enumerator.createCapturer(deviceName, null)
                 if (videoCapturer != null) {
-                    return videoCapturer
+                    return CapturerWithFacing(videoCapturer, isFrontFacing = false)
                 }
             }
         }
@@ -109,7 +116,7 @@ class LocalCameraSession @Inject constructor(
                 // インカメラ用のキャプチャを作成して返す
                 val videoCapturer = enumerator.createCapturer(deviceName, null)
                 if (videoCapturer != null) {
-                    return videoCapturer
+                    return CapturerWithFacing(videoCapturer, isFrontFacing = true)
                 }
             }
         }
