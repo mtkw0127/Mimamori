@@ -21,11 +21,11 @@ Android の UI は Claude に任せ、iOS の UI（SwiftUI）は自分で実装�
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| Android プロジェクト作成（Compose） | 🤖 | — |
+| ✅ Android プロジェクト作成（Compose） | 🤖 | — |
 | iOS プロジェクト作成（SwiftUI） | 🤝 | Xcode のプロジェクト構成、Signing、実機への転送、SPM での依存追加 |
 | iOS: 起動画面（Recorder / Viewer の役割選択） | 🧑‍💻 | SwiftUI 最初の一歩。`App` / `Scene` / `View` の関係、Xcode Preview（`#Preview`） |
-| WebRTC ライブラリの導入（両 OS） | 🤝 | ライブラリ選定の観点（メンテ状況・バージョン） |
-| カメラ・ネットワークの権限設定 | 🧑‍💻 (iOS) / 🤖 (Android) | iOS の `Info.plist`（`NSCameraUsageDescription`）と権限リクエストの流れ |
+| WebRTC ライブラリの導入（両 OS） | 🤝 | ライブラリ選定の観点（メンテ状況・バージョン）。Android は `io.getstream:stream-webrtc-android` を導入済み |
+| カメラ・ローカルネットワークの権限設定 | 🧑‍💻 (iOS) / 🤖 (Android ✅) | iOS の `Info.plist`（`NSCameraUsageDescription`・`NSLocalNetworkUsageDescription`・`NSBonjourServices`）と権限リクエストの流れ |
 
 ## M1. カメラ映像をローカルに表示
 
@@ -40,48 +40,55 @@ WebRTC の VideoTrack として取得したカメラ映像を、同じ端末の�
 ## M2. シグナリングなしで P2P 接続（手動）
 
 **WebRTC を理解するための最重要ステップ。**
-SDP と ICE Candidate を、シグナリングサーバーの代わりに手動（コピー＆ペーストや QR など）で交換して、2 台を繋ぐ。
+SDP と ICE Candidate を、手動（コピー＆ペーストなど）で交換して、同じ Wi-Fi 上の 2 台を繋ぐ。
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| PeerConnection の作成と映像トラック追加 | 🧑‍💻 | `RTCConfiguration`（ICE サーバー設定） |
+| PeerConnection の作成と映像トラック追加 | 🧑‍💻 | `RTCConfiguration`（同一 LAN なので ICE サーバーは空でよい理由） |
 | offer / answer の作成と `setLocalDescription` / `setRemoteDescription` | 🧑‍💻 | offer/answer の順序と状態遷移（signalingState） |
 | ICE Candidate の収集と追加 | 🧑‍💻 | Trickle ICE、`iceConnectionState` の遷移 |
 | 受信した映像トラックの表示 | 🧑‍💻 | `onTrack` / `didAdd` のコールバック |
 | iOS: デバッグ用のコピペ UI | 🧑‍💻 | SwiftUI の基本（`View`・`@State`・`TextField`・`Button`）、`UIPasteboard` |
-| Android: デバッグ用のコピペ UI | 🤖 | — |
+| ✅ Android: デバッグ用のコピペ UI | 🤖 | `ManualP2PSession` インターフェースと、TODO 入りの `WebRtcManualP2PSession` を用意済み |
 
 まずは **同一 OS 同士（Android ⇄ Android）→ iOS ⇄ iOS → iOS ⇄ Android** の順で繋ぐと切り分けしやすい。
 
-## M3. シグナリングサーバー
+## M3. LAN 内での発見とシグナリング
+
+M2 の手作業（コピー＆ペースト）を、mDNS による自動発見と TCP による直接通信に置き換える。
+設計は [architecture.md §3.1〜3.2](architecture.md#31-サービス発見mdns--dns-sd) を参照。
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| シグナリング方式の決定 | 🤝 | [architecture.md §3.1](architecture.md#31-シグナリングサーバー) |
-| メッセージ形式（JSON スキーマ）の設計 | 🧑‍💻 | 両 OS とサーバーで共有する「プロトコル」を自分で設計する経験 |
-| サーバー本体の実装 | 🤖（ローカル用の簡易版） | — |
-| アプリ側のシグナリングクライアント | 🤝 | WebSocket 接続の維持・再接続 |
-| M2 の手動交換をシグナリング経由に置き換え | 🧑‍💻 | — |
+| メッセージ形式（JSON スキーマ）の設計 | 🧑‍💻 | iOS と Android で共有する「プロトコル」を自分で設計する経験 |
+| iOS: `NWListener` での告知・待ち受け / `NWBrowser` での検索 | 🧑‍💻 | Network フレームワーク、Bonjour の TXT レコード、ローカルネットワーク権限 |
+| iOS: `NWConnection` での改行区切り JSON の送受信 | 🧑‍💻 | TCP はメッセージの区切りを保証しない（受信バッファの扱い）、`Codable` |
+| Android: `NsdManager` での告知・検索 | 🤝 | コールバック API を `Flow` にする部分は Claude、使う側は自分で |
+| Android: TCP の待ち受け・接続と改行区切り JSON の送受信 | 🤝 | `ServerSocket` / `Socket` と Coroutines（`Dispatchers.IO`） |
+| M2 の手動交換をこの仕組みに置き換え | 🧑‍💻 | — |
+| iOS: 見つかった Recorder の一覧 UI | 🧑‍💻 | `List`、発見・消失に応じたリアルタイム更新 |
+| Android: 見つかった Recorder の一覧 UI | 🤖 | — |
 
 ## M4. ペアリング（OTP）
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| OTP 生成・表示・有効期限 | 🧑‍💻 | 暗号学的に安全な乱数 |
+| OTP 生成・表示・有効期限、TXT の `pairing` フラグ切り替え | 🧑‍💻 | 暗号学的に安全な乱数 |
 | 端末鍵ペアの生成と保管 | 🧑‍💻 | iOS: CryptoKit + Secure Enclave / Android: Keystore |
 | HMAC による証明の作成・検証 | 🧑‍💻 | [security.md §3.2](security.md#32-ペアリングの流れ) |
 | iOS ⇄ Android での鍵・署名形式の相互運用 | 🧑‍💻 | DER / raw 形式の違い（ハマりどころ） |
 | iOS: ペアリング画面の UI（OTP 表示・入力） | 🧑‍💻 | 画面遷移（`NavigationStack`）、`@Observable` による ViewModel との連携、キーボード・フォーカス制御（`@FocusState`）、有効期限のカウントダウン表示 |
 | Android: ペアリング画面の UI | 🤖 | — |
-| サーバー側のレート制限 | 🤖 | — |
+| Recorder 側の失敗回数制限 | 🧑‍💻 | 総当たり対策（[security.md §3.1](security.md#31-otp)） |
 
 ## M5. 再接続認証と破棄
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
 | チャレンジ・レスポンス認証 | 🧑‍💻 | nonce の役割、署名と検証 |
+| SDP への署名と検証 | 🧑‍💻 | DTLS フィンガープリントと認証の結び付け（[security.md §4.2](security.md#42-sdp-への署名推奨)） |
 | ペアリング済み一覧の永続化 | 🤝 | iOS: SwiftData / Keychain、Android: Room / DataStore |
-| 破棄と即時切断 | 🧑‍💻 | PeerConnection の正しいクローズとリソース解放 |
+| 破棄の通知と即時切断 | 🧑‍💻 | PeerConnection と TCP の正しいクローズとリソース解放 |
 | iOS: Recorder / Viewer 一覧・設定画面 UI | 🧑‍💻 | `List`・スワイプ削除（`onDelete`）、確認ダイアログ（`confirmationDialog`）、状態に応じた表示切替（オンライン / オフライン / 破棄済み） |
 | Android: 一覧・設定画面 UI | 🤖 | — |
 
@@ -93,16 +100,17 @@ SDP と ICE Candidate を、シグナリングサーバーの代わりに手動�
 | ビットレート上限・`degradationPreference` の設定 | 🧑‍💻 | `RTCRtpSender.parameters` の扱い |
 | 温度状態の監視と段階的な画質調整 | 🧑‍💻 | iOS `thermalState` の通知 / Android `OnThermalStatusChangedListener` |
 | iOS: 省電力表示モード（黒画面・スリープ抑止） | 🧑‍💻 | `isIdleTimerDisabled`、iOS のバックグラウンド制約 |
-| Android: Foreground Service 化 | 🤝 | `foregroundServiceType="camera"` と OS バージョンごとの制約 |
+| Android: Foreground Service 化（カメラ・待ち受け・mDNS 告知） | 🤝 | `foregroundServiceType="camera"` と OS バージョンごとの制約 |
 | 消費電力の計測 | 🤝 | Xcode Instruments (Energy Log) / Android Battery Historian |
 
-## M7. 実環境での接続性
+## M7. 実環境での安定性
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| モバイル回線 ⇄ Wi-Fi での接続テスト | 🧑‍💻 | NAT の種類と STUN の限界 |
-| TURN サーバーの用意 | 🤝 | coturn の設定 or マネージドサービス |
-| 接続状態の監視と自動再接続 | 🧑‍💻 | ICE restart |
+| iOS ⇄ Android の相互接続テスト | 🧑‍💻 | 鍵・署名・SDP の形式の違いによる不具合の切り分け |
+| 自宅環境（メッシュ Wi-Fi・中継器を含む）での実機テスト | 🧑‍💻 | mDNS が届く範囲 |
+| Wi-Fi 切断・IP 変更からの自動再接続 | 🧑‍💻 | 接続状態の監視、mDNS での再検索 |
+| 繋がらないときの原因表示（権限なし・AP アイソレーションなど） | 🤝 | エラーの分類とユーザーへの伝え方 |
 
 ---
 
