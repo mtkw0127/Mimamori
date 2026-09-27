@@ -4,8 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.mtkw0127.mimamori.webrtc.ManualP2PSession
-import io.github.mtkw0127.mimamori.webrtc.WebRtcManualP2PSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.webrtc.PeerConnection
+import javax.inject.Inject
 
 enum class ManualP2PRole {
     /** offer を作る側（Recorder） */
@@ -31,12 +32,12 @@ data class ManualP2PUiState(
     val errorMessage: String? = null,
 )
 
-class ManualP2PViewModel(
+@HiltViewModel
+class ManualP2PViewModel @Inject constructor(
     application: Application,
     savedStateHandle: SavedStateHandle,
+    private val session: ManualP2PSession,
 ) : AndroidViewModel(application) {
-
-    private val session: ManualP2PSession = WebRtcManualP2PSession(application)
 
     private val _uiState = MutableStateFlow(
         ManualP2PUiState(role = ManualP2PRole.valueOf(checkNotNull(savedStateHandle.get<String>("role")))),

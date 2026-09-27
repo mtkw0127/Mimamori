@@ -1,25 +1,34 @@
 package io.github.mtkw0127.mimamori.webrtc
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.webrtc.EglBase
 import org.webrtc.PeerConnection
+import org.webrtc.PeerConnectionFactory
+import javax.inject.Inject
 
 /**
  * TODO(M2: あなたが実装): [ManualP2PSession] の WebRTC 実装。
  *
+ * `factory` / `eglBase` / `cameraSession` は Hilt がアプリ全体で共有しているインスタンスを渡してくる
+ * （それぞれ [WebRtcModule] / [LocalCameraSession] 参照）。ここで新しく作り直さないこと。
+ *
  * 取り組む順番のヒント（詳細は docs/architecture.md §2, docs/roadmap.md M2）:
- *  1. PeerConnectionFactory の初期化（アプリ全体で 1 回）
- *  2. RTCConfiguration（同一 LAN なので iceServers は空でよい）で PeerConnection を作る
- *  3. Offerer は M1 で作った VideoTrack を addTrack する
- *  4. offer / answer の作成と setLocalDescription / setRemoteDescription
+ *  1. RTCConfiguration（同一 LAN なので iceServers は空でよい）で PeerConnection を作る
+ *  2. Offerer は [cameraSession] の `start()` を呼び、`videoTrack` を `addTrack` する
+ *  3. offer / answer の作成と setLocalDescription / setRemoteDescription
  *     （コールバック API を suspend 関数にするには suspendCancellableCoroutine が便利）
- *  5. iceGatheringState が COMPLETE になるのを待ってから localDescription を返す
- *  6. Answerer は onTrack で受け取った VideoTrack を SurfaceViewRenderer に表示する
+ *  4. iceGatheringState が COMPLETE になるのを待ってから localDescription を返す
+ *  5. Answerer は onTrack で受け取った VideoTrack を SurfaceViewRenderer に表示する
  */
-class WebRtcManualP2PSession(
-    private val context: Context,
+class WebRtcManualP2PSession @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val factory: PeerConnectionFactory,
+    private val eglBase: EglBase,
+    private val cameraSession: LocalCameraSession,
 ) : ManualP2PSession {
 
     private val _connectionState = MutableStateFlow(PeerConnection.PeerConnectionState.NEW)
