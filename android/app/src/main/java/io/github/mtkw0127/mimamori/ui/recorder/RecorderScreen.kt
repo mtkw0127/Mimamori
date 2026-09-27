@@ -6,16 +6,20 @@ import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -149,6 +153,8 @@ private fun CameraPreview(
 ) {
     val videoTrack by viewModel.videoTrack.collectAsStateWithLifecycle()
     val isFrontFacingCamera by viewModel.isFrontFacingCamera.collectAsStateWithLifecycle()
+    val currentCameraDeviceName by viewModel.currentCameraDeviceName.collectAsStateWithLifecycle()
+    val availableCameras by viewModel.availableCameras.collectAsStateWithLifecycle()
     var cameraNotFound by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -162,34 +168,55 @@ private fun CameraPreview(
         onDispose { viewModel.stop() }
     }
 
-    if (videoTrack != null) {
-        AndroidView(
-            factory = { context ->
-                SurfaceViewRenderer(context).apply {
-                    init(viewModel.eglBase.eglBaseContext, null)
-                    // Column の weight で割り当てられた領域いっぱいに映像を表示するので、
-                    // 画面の向きに合わせて Compose 側でアスペクト比を計算する必要はない
-                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
-                }
-            },
-            update = { view ->
-                // フロントカメラのときだけ左右反転する（背面カメラは反転しない）
-                view.setMirror(isFrontFacingCamera == true)
-                videoTrack?.addSink(view)
-            },
-            modifier = modifier.fillMaxWidth(),
-        )
-    } else {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .background(Color.Black),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = if (cameraNotFound) "カメラを見つけることができませんでした" else "カメラを起動しています…",
-                color = Color.White,
+    Box(modifier = modifier.fillMaxWidth()) {
+        if (videoTrack != null) {
+            AndroidView(
+                factory = { context ->
+                    SurfaceViewRenderer(context).apply {
+                        init(viewModel.eglBase.eglBaseContext, null)
+                        // 割り当てられた領域いっぱいに映像を表示するので、
+                        // 画面の向きに合わせて Compose 側でアスペクト比を計算する必要はない
+                        setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+                    }
+                },
+                update = { view ->
+                    // フロントカメラのときだけ左右反転する（背面カメラは反転しない）
+                    view.setMirror(isFrontFacingCamera == true)
+                    videoTrack?.addSink(view)
+                },
+                modifier = Modifier.fillMaxSize(),
             )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (cameraNotFound) "カメラを見つけることができませんでした" else "カメラを起動しています…",
+                    color = Color.White,
+                )
+            }
+        }
+
+        // 段階ズーム: 端末が複数レンズを持っている場合だけ、切り替えの行を表示する
+        if (availableCameras.size > 1) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                availableCameras.forEach { option ->
+                    FilterChip(
+                        selected = option.deviceName == currentCameraDeviceName,
+                        onClick = { viewModel.switchCamera(option.deviceName) },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
         }
     }
 }

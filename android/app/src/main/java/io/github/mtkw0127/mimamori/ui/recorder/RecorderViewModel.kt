@@ -20,8 +20,14 @@ class RecorderViewModel @Inject constructor(
 
     val videoTrack: StateFlow<VideoTrack?> = cameraSession.videoTrack
     val isFrontFacingCamera: StateFlow<Boolean?> = cameraSession.isFrontFacingCamera
+    val currentCameraDeviceName: StateFlow<String?> = cameraSession.currentCameraDeviceName
 
-    fun start() = cameraSession.start()
+    /** 端末が持つレンズの一覧。撮影を開始するまでは空リスト */
+    val availableCameras: StateFlow<List<LocalCameraSession.CameraOption>> = cameraSession.availableCameras
+
+    suspend fun start() = cameraSession.start()
 
     fun stop() = cameraSession.stop()
+
+    fun switchCamera(deviceName: String) = cameraSession.switchTo(deviceName)
 }
