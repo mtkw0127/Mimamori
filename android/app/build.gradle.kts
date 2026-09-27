@@ -23,6 +23,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -38,5 +39,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.stream.webrtc.android)
+    implementation(libs.timber)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
