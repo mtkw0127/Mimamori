@@ -42,7 +42,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
@@ -63,6 +63,10 @@ fun ManualP2PScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.onErrorShown()
         }
+    }
+
+    LaunchedEffect(Unit) {
+
     }
 
     Scaffold(
@@ -86,7 +90,10 @@ fun ManualP2PScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("接続状態: ${uiState.connectionState}", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "接続状態: ${uiState.connectionState}",
+                style = MaterialTheme.typography.titleMedium
+            )
             StepsCard(role)
 
             if (role == ManualP2PRole.Offerer) {
@@ -102,7 +109,14 @@ fun ManualP2PScreen(
                 sdp = uiState.localSdp,
                 onCopy = {
                     scope.launch {
-                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("sdp", uiState.localSdp)))
+                        clipboard.setClipEntry(
+                            ClipEntry(
+                                ClipData.newPlainText(
+                                    "sdp",
+                                    uiState.localSdp
+                                )
+                            )
+                        )
                     }
                 },
             )
@@ -119,7 +133,8 @@ fun ManualP2PScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
                     scope.launch {
-                        val text = clipboard.getClipEntry()?.clipData?.getItemAt(0)?.text?.toString()
+                        val text =
+                            clipboard.getClipEntry()?.clipData?.getItemAt(0)?.text?.toString()
                         if (text != null) viewModel.onRemoteSdpInputChange(text)
                     }
                 }) { Text("貼り付け") }
@@ -154,15 +169,24 @@ private fun StepsCard(role: ManualP2PRole) {
             "自分の Offer をコピーして相手の端末に渡す",
             "相手が作った Answer を貼り付けて「Answer を適用」",
         )
+
         ManualP2PRole.Answerer -> listOf(
             "相手の Offer を貼り付けて「Offer を適用して Answer を作成」",
             "自分の Answer をコピーして相手の端末に渡す",
         )
     }
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Text("手順", style = MaterialTheme.typography.titleSmall)
-            steps.forEachIndexed { index, step -> Text("${index + 1}. $step", style = MaterialTheme.typography.bodyMedium) }
+            steps.forEachIndexed { index, step ->
+                Text(
+                    "${index + 1}. $step",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
             Text(
                 "端末間の受け渡しは、PC 経由のチャットやメモアプリなどを使う。",
                 style = MaterialTheme.typography.bodySmall,
