@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 安心の家: 白い線の家と、中の黄色いハート。中央 66dp の安全領域に収めている -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 家（線で描く） -->
+    <path
+        android:pathData="M54,28L80,50L80,78Q80,82 76,82L32,82Q28,82 28,78L28,50Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="7" />
+    <!-- ハート -->
+    <path
+        android:fillColor="#FFD27A"
+        android:pathData="M54,72C54,72 44,65.5 44,59.5C44,56 46.6,53.5 49.6,53.5C51.6,53.5 53.2,54.7 54,56.4C54.8,54.7 56.4,53.5 58.4,53.5C61.4,53.5 64,56 64,59.5C64,65.5 54,72 54,72Z" />
+</vector>
