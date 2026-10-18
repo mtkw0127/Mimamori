@@ -10,10 +10,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -48,6 +50,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.mtkw0127.mimamori.ui.common.HideNavigationBar
+import io.github.mtkw0127.mimamori.ui.common.safeDrawingPaddingIf
 import io.github.mtkw0127.mimamori.webrtc.LocalCameraSession
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
@@ -70,6 +74,8 @@ fun RecorderScreen(
 
     val isLandscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    HideNavigationBar()
 
     Scaffold(
         topBar = {
@@ -96,7 +102,8 @@ fun RecorderScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                // 横向きではプレビューをインカメの部分まで広げる（ボタン類だけ安全な領域に寄せる）
+                .padding(if (isLandscape) PaddingValues() else innerPadding),
         ) {
             if (hasCameraPermission) {
                 CameraPreview(modifier = Modifier.fillMaxSize())
@@ -108,6 +115,7 @@ fun RecorderScreen(
                         onClick = onBack,
                         modifier = Modifier
                             .align(Alignment.TopStart)
+                            .safeDrawingPadding()
                             .padding(8.dp),
                     ) {
                         Icon(
@@ -120,12 +128,14 @@ fun RecorderScreen(
                 SignalingStatusLabel(
                     modifier = Modifier
                         .align(if (isLandscape) Alignment.TopEnd else Alignment.TopStart)
+                        .safeDrawingPaddingIf(isLandscape)
                         .padding(16.dp),
                     color = Color.White,
                 )
                 PairingControls(
                     modifier = Modifier
                         .align(if (isLandscape) Alignment.BottomEnd else Alignment.TopEnd)
+                        .safeDrawingPaddingIf(isLandscape)
                         .padding(16.dp),
                     textColor = Color.White,
                 )
@@ -305,6 +315,9 @@ private fun CameraPreview(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
+                .safeDrawingPaddingIf(
+                    configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+                )
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,6 +53,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.mtkw0127.mimamori.signaling.DiscoveredRecorder
 import io.github.mtkw0127.mimamori.signaling.SignalingMessage
+import io.github.mtkw0127.mimamori.ui.common.HideNavigationBar
+import io.github.mtkw0127.mimamori.ui.common.safeDrawingPaddingIf
 import kotlinx.coroutines.delay
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
@@ -90,6 +93,8 @@ fun ViewerScreen(
     // 横向きで映像表示中は、映像をできるだけ大きく見せるため TopAppBar を隠して戻るボタンを重ねる
     val fullscreenVideo = isLandscape && status == ViewerConnectionStatus.CONNECTED
 
+    HideNavigationBar()
+
     Scaffold(
         topBar = {
             if (!fullscreenVideo) {
@@ -110,7 +115,8 @@ fun ViewerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black)
-                    .padding(innerPadding),
+                    // 横向きの全画面表示では、映像をインカメの部分まで広げる（ボタン類だけ安全な領域に寄せる）
+                    .padding(if (fullscreenVideo) PaddingValues() else innerPadding),
                 contentAlignment = Alignment.Center,
             ) {
                 RemoteVideo(
@@ -118,17 +124,19 @@ fun ViewerScreen(
                     eglBaseContext = viewModel.eglBase.eglBaseContext,
                 )
                 ZoomControl(
-                        zoomInfo = zoomInfo,
-                        onZoomChange = viewModel::setZoomRatio,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(12.dp),
-                    )
+                    zoomInfo = zoomInfo,
+                    onZoomChange = viewModel::setZoomRatio,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .safeDrawingPaddingIf(fullscreenVideo)
+                        .padding(12.dp),
+                )
                 if (fullscreenVideo) {
                     IconButton(
                         onClick = onBack,
                         modifier = Modifier
                             .align(Alignment.TopStart)
+                            .safeDrawingPaddingIf(fullscreenVideo)
                             .padding(8.dp),
                     ) {
                         Icon(
