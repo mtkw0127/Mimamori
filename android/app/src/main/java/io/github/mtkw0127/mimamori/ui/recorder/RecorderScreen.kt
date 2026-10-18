@@ -24,7 +24,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -54,7 +53,6 @@ import org.webrtc.SurfaceViewRenderer
 @Composable
 fun RecorderScreen(
     onBack: () -> Unit,
-    onOpenManualP2P: () -> Unit,
 ) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
@@ -86,8 +84,7 @@ fun RecorderScreen(
         },
     ) { innerPadding ->
         if (hasCameraPermission && isLandscape) {
-            // 開発用の手動 P2P 接続ボタンと、TopAppBar の代わりの戻るボタンを
-            // プレビューの上に浮かせて表示する
+            // 戻るボタンと接続状態を、プレビューの上に浮かせて表示する
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -106,14 +103,12 @@ fun RecorderScreen(
                         tint = Color.White,
                     )
                 }
-                OutlinedButton(
-                    onClick = onOpenManualP2P,
+                SignalingStatusLabel(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
+                        .align(Alignment.TopEnd)
                         .padding(16.dp),
-                ) {
-                    Text("[開発用] 手動 P2P 接続（M2）")
-                }
+                    color = Color.White,
+                )
             }
         } else {
             Column(
@@ -124,6 +119,7 @@ fun RecorderScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (hasCameraPermission) {
+                    SignalingStatusLabel()
                     CameraPreview(modifier = Modifier.weight(1f))
                 } else {
                     Text(
@@ -134,19 +130,32 @@ fun RecorderScreen(
                         Text("カメラの権限を許可する")
                     }
                 }
-
-                OutlinedButton(onClick = onOpenManualP2P, modifier = Modifier.fillMaxWidth()) {
-                    Text("[開発用] 手動 P2P 接続（M2）")
-                }
             }
         }
     }
 }
 
+/** mDNS 告知〜TCP シグナリング〜WebRTC 接続の、今の段階を一言で表示する */
+@Composable
+private fun SignalingStatusLabel(
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    viewModel: RecorderViewModel = hiltViewModel(),
+) {
+    val status by viewModel.signalingStatus.collectAsStateWithLifecycle()
+    val text = when (status) {
+        SignalingStatus.WAITING_FOR_VIEWER -> "Viewer の接続を待っています…"
+        SignalingStatus.NEGOTIATING -> "接続中…"
+        SignalingStatus.CONNECTED -> "Viewer が接続しています"
+        SignalingStatus.DISCONNECTED -> "Viewer が切断しました"
+        SignalingStatus.FAILED -> "接続に失敗しました"
+    }
+    Text(text, modifier = modifier, color = color, style = MaterialTheme.typography.bodyMedium)
+}
+
 /**
  * [RecorderViewModel] 経由で [LocalCameraSession] を使い、カメラ映像をプレビュー表示する。
- * カメラの生成・解放そのものはこの画面が入る/出るタイミングで [RecorderViewModel] に依頼するだけで、
- * 実際の WebRTC のオブジェクト操作は [LocalCameraSession] 側に閉じている。
+ * あわせて、mDNS での告知と TCP でのシグナリングもこの画面に入ったタイミングで開始する（M3）。
  */
 @Composable
 private fun CameraPreview(
@@ -163,6 +172,8 @@ private fun CameraPreview(
     LaunchedEffect(Unit) {
         try {
             viewModel.start()
+            // カメラ映像の準備ができたら、Viewer からの接続を待ち受け始める
+            viewModel.startSignaling()
         } catch (_: LocalCameraSession.LocalCameraSessionStartException.CameraNotFoundException) {
             cameraNotFound = true
         }

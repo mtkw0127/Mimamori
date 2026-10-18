@@ -42,7 +42,7 @@ class ManualP2PViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val session: ManualP2PSession,
     val eglBase: EglBase,
-    private val cameraSession: LocalCameraSession,
+    cameraSession: LocalCameraSession,
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(

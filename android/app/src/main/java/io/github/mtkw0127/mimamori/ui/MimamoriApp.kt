@@ -32,16 +32,10 @@ fun MimamoriApp() {
             )
         }
         composable(Routes.RECORDER) {
-            RecorderScreen(
-                onBack = navController::popBackStack,
-                onOpenManualP2P = { navController.navigate(Routes.manualP2P(ManualP2PRole.Offerer)) },
-            )
+            RecorderScreen(onBack = navController::popBackStack)
         }
         composable(Routes.VIEWER) {
-            ViewerScreen(
-                onBack = navController::popBackStack,
-                onOpenManualP2P = { navController.navigate(Routes.manualP2P(ManualP2PRole.Answerer)) },
-            )
+            ViewerScreen(onBack = navController::popBackStack)
         }
         composable(
             route = Routes.MANUAL_P2P,

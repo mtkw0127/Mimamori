@@ -1,14 +1,11 @@
 package io.github.mtkw0127.mimamori.webrtc
 
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.DataChannel
-import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
@@ -34,9 +31,7 @@ import kotlin.coroutines.resumeWithException
  * `SdpObserver`/`PeerConnection.Observer` のコールバックを `suspend fun` として扱っている。
  */
 class WebRtcManualP2PSession @Inject constructor(
-    @param:ApplicationContext private val context: Context,
     private val factory: PeerConnectionFactory,
-    private val eglBase: EglBase,
     private val cameraSession: LocalCameraSession,
 ) : ManualP2PSession {
 
@@ -53,7 +48,11 @@ class WebRtcManualP2PSession @Inject constructor(
 
     override suspend fun createOffer(): String {
         val connection = createPeerConnection()
-        cameraSession.start()
+        // RecorderScreen のローカルプレビューが既にカメラを起動していることがあるので、
+        // 二重に起動し直さないようにする
+        if (cameraSession.videoTrack.value == null) {
+            cameraSession.start()
+        }
         val videoTrack =
             cameraSession.videoTrack.value ?: error("カメラの映像を取得できませんでした")
         connection.addTrack(videoTrack)
