@@ -8,6 +8,9 @@ import io.github.mtkw0127.mimamori.pairing.PairedRecorder
 import io.github.mtkw0127.mimamori.pairing.PairedRecorderStore
 import io.github.mtkw0127.mimamori.pairing.constantTimeEquals
 import io.github.mtkw0127.mimamori.pairing.hmacSha256
+import io.github.mtkw0127.mimamori.pairing.signBase64
+import io.github.mtkw0127.mimamori.pairing.signedPayload
+import io.github.mtkw0127.mimamori.pairing.verifySignature
 import io.github.mtkw0127.mimamori.signaling.DiscoveredRecorder
 import io.github.mtkw0127.mimamori.signaling.SignalingConnection
 import io.github.mtkw0127.mimamori.signaling.SignalingMessage
@@ -98,7 +101,7 @@ class ViewerViewModel @Inject constructor(
         viewModelScope.launch {
             val paired = recorder.recorderId?.let { pairedRecorderStore.find(it) }
             if (paired != null) {
-                connectAsPaired(recorder)
+                connectAsPaired(recorder, paired)
             } else {
                 _pairingTarget.value = recorder
             }
@@ -120,11 +123,36 @@ class ViewerViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
-    private fun connectAsPaired(recorder: DiscoveredRecorder) {
+    private fun connectAsPaired(recorder: DiscoveredRecorder, paired: PairedRecorder) {
         runConnection(recorder) { conn ->
             conn.send(SignalingMessage.ConnectRequest(identity.id))
-            awaitOfferAndAnswer(conn)
+
+            when (val response = conn.receiveOne()) {
+                is SignalingMessage.Challenge -> {
+                    // mDNS で見つけた相手ではなく、ペアリングした相手本人からのチャレンジか確認してから署名する
+                    check(response.recorderId == paired.recorderId) { "ペアリングした Recorder ではありません" }
+                    val payload = signedPayload("challenge", response.nonceBase64, paired.recorderId, identity.id)
+                    conn.send(SignalingMessage.ChallengeResponse(identity.signBase64(payload)))
+                    awaitOfferAndAnswer(conn, paired.recorderId, paired.publicKeyBase64)
+                }
+
+                is SignalingMessage.PairingRejected -> {
+                    if (response.reason == "not paired") {
+                        // Recorder 側で破棄されている（docs/security.md §5）。こちらの登録も消す
+                        forgetRecorder(paired.recorderId)
+                        error("この Recorder から削除されました。もう一度ペアリングしてください")
+                    }
+                    error("認証に失敗しました")
+                }
+
+                else -> error("想定外の応答です")
+            }
         }
+    }
+
+    private suspend fun forgetRecorder(recorderId: String) {
+        pairedRecorderStore.remove(recorderId)
+        _pairedRecorderIds.value = _pairedRecorderIds.value - recorderId
     }
 
     private fun pairAndConnect(recorder: DiscoveredRecorder, otp: String) {
@@ -148,7 +176,7 @@ class ViewerViewModel @Inject constructor(
                         ),
                     )
                     _pairedRecorderIds.value = _pairedRecorderIds.value + response.recorderId
-                    awaitOfferAndAnswer(conn)
+                    awaitOfferAndAnswer(conn, response.recorderId, response.recorderPublicKeyBase64)
                 }
 
                 is SignalingMessage.PairingRejected -> error(response.reason)
@@ -179,14 +207,34 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
-    private suspend fun awaitOfferAndAnswer(conn: SignalingConnection) {
+    /**
+     * Recorder の公開鍵で offer の署名を検証してから、自分の秘密鍵で署名した answer を返す
+     * （docs/security.md §4.2）。署名が合わなければ、映像のやり取りに進まず接続を失敗させる。
+     */
+    private suspend fun awaitOfferAndAnswer(
+        conn: SignalingConnection,
+        recorderId: String,
+        recorderPublicKeyBase64: String,
+    ) {
         session.resetConnection()
         conn.incoming().collect { message ->
             when (message) {
                 is SignalingMessage.Offer -> {
+                    val offerPayload = signedPayload("offer", recorderId, identity.id, message.sdp)
+                    check(verifySignature(recorderPublicKeyBase64, offerPayload, message.signatureBase64)) {
+                        "offer の署名が正しくありません"
+                    }
                     val answerSdp = session.acceptOfferAndCreateAnswer(message.sdp)
-                    conn.send(SignalingMessage.Answer(answerSdp))
+                    val answerPayload = signedPayload("answer", recorderId, identity.id, answerSdp)
+                    conn.send(SignalingMessage.Answer(answerSdp, identity.signBase64(answerPayload)))
                     _status.value = ViewerConnectionStatus.CONNECTED
+                }
+
+                is SignalingMessage.Revoked -> {
+                    forgetRecorder(recorderId)
+                    session.resetConnection()
+                    _errorMessage.value = "この Recorder から削除されました"
+                    conn.close()
                 }
 
                 is SignalingMessage.Disconnect -> conn.close()

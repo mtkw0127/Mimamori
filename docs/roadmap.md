@@ -101,12 +101,16 @@ M2 の手作業（コピー＆ペースト）を、mDNS による自動発見と
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| チャレンジ・レスポンス認証 | 🧑‍💻 | nonce の役割、署名と検証 |
-| SDP への署名と検証 | 🧑‍💻 | DTLS フィンガープリントと認証の結び付け（[security.md §4.2](security.md#42-sdp-への署名推奨)） |
-| ペアリング済み一覧の永続化 | 🤝 | iOS: SwiftData / Keychain、Android: Room / DataStore |
-| 破棄の通知と即時切断 | 🧑‍💻 | PeerConnection と TCP の正しいクローズとリソース解放 |
+| ✅ Android: チャレンジ・レスポンス認証 | 🤖 | `Challenge` / `ChallengeResponse`。毎回新しい nonce に Viewer が署名し、Recorder が登録済みの公開鍵で検証（`Signatures.kt`） |
+| iOS: チャレンジ・レスポンス認証 | 🧑‍💻 | nonce の役割、署名と検証。Android とは DER 形式の署名・X.509 形式の公開鍵で揃える |
+| ✅ Android: SDP への署名と検証 | 🤖 | offer は Recorder、answer は Viewer の秘密鍵で署名し、相手の公開鍵で検証（[security.md §4.2](security.md#42-sdp-への署名推奨)） |
+| iOS: SDP への署名と検証 | 🧑‍💻 | DTLS フィンガープリントと認証の結び付け |
+| ✅ Android: ペアリング済み一覧の永続化 | 🤝 | `PairedViewerStore` / `PairedRecorderStore`（公開鍵は秘密情報ではないので JSON ファイル保存。M4 で実装済み） |
+| iOS: ペアリング済み一覧の永続化 | 🧑‍💻 | SwiftData / Keychain |
+| ✅ Android: 破棄の通知と即時切断 | 🤖 | Recorder 画面の「Viewer を管理」→ `Revoked` を送って TCP / PeerConnection をクローズ。Viewer は受信または接続拒否（`not paired`）で自分の登録も消す |
+| iOS: 破棄の通知と即時切断 | 🧑‍💻 | PeerConnection と TCP の正しいクローズとリソース解放 |
 | iOS: Recorder / Viewer 一覧・設定画面 UI | 🧑‍💻 | `List`・スワイプ削除（`onDelete`）、確認ダイアログ（`confirmationDialog`）、状態に応じた表示切替（オンライン / オフライン / 破棄済み） |
-| Android: 一覧・設定画面 UI | 🤖 | — |
+| ✅ Android: 一覧・設定画面 UI（削除まで） | 🤖 | `PairedDevicesScreen`。Viewer / Recorder の一覧と、確認ダイアログ付きの削除。オンライン / オフライン表示と、接続中の相手への破棄通知は未実装 |
 
 ## M6. 省電力・発熱対策
 

@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.mtkw0127.mimamori.ui.debug.ManualP2PRole
 import io.github.mtkw0127.mimamori.ui.debug.ManualP2PScreen
+import io.github.mtkw0127.mimamori.ui.paired.PairedDevicesScreen
 import io.github.mtkw0127.mimamori.ui.recorder.RecorderScreen
 import io.github.mtkw0127.mimamori.ui.role.RoleSelectScreen
 import io.github.mtkw0127.mimamori.ui.viewer.ViewerScreen
@@ -16,6 +17,7 @@ private object Routes {
     const val ROLE_SELECT = "role_select"
     const val RECORDER = "recorder"
     const val VIEWER = "viewer"
+    const val PAIRED_DEVICES = "paired_devices"
     const val MANUAL_P2P = "manual_p2p/{role}"
 
     fun manualP2P(role: ManualP2PRole) = "manual_p2p/${role.name}"
@@ -29,10 +31,14 @@ fun MimamoriApp() {
             RoleSelectScreen(
                 onRecorderSelected = { navController.navigate(Routes.RECORDER) },
                 onViewerSelected = { navController.navigate(Routes.VIEWER) },
+                onPairedDevicesSelected = { navController.navigate(Routes.PAIRED_DEVICES) },
             )
         }
         composable(Routes.RECORDER) {
             RecorderScreen(onBack = navController::popBackStack)
+        }
+        composable(Routes.PAIRED_DEVICES) {
+            PairedDevicesScreen(onBack = navController::popBackStack)
         }
         composable(Routes.VIEWER) {
             ViewerScreen(onBack = navController::popBackStack)

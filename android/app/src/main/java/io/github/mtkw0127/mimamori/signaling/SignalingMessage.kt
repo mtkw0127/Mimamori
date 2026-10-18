@@ -53,15 +53,36 @@ sealed class SignalingMessage {
     @SerialName("connectRequest")
     data class ConnectRequest(val viewerId: String) : SignalingMessage()
 
-    /** Recorder → Viewer: 映像の offer */
+    /**
+     * Recorder → Viewer: [ConnectRequest] への返事。本人確認のためのチャレンジ（docs/security.md §4）。
+     * Viewer は `signedPayload("challenge", nonce, recorderId, viewerId)` に署名して [ChallengeResponse] を返す
+     */
+    @Serializable
+    @SerialName("challenge")
+    data class Challenge(val nonceBase64: String, val recorderId: String) : SignalingMessage()
+
+    /** Viewer → Recorder: [Challenge] への署名（DER 形式の ECDSA を Base64 にしたもの） */
+    @Serializable
+    @SerialName("challengeResponse")
+    data class ChallengeResponse(val signatureBase64: String) : SignalingMessage()
+
+    /** Recorder → Viewer: 映像の offer。Recorder の秘密鍵による署名つき（docs/security.md §4.2） */
     @Serializable
     @SerialName("offer")
-    data class Offer(val sdp: String) : SignalingMessage()
+    data class Offer(val sdp: String, val signatureBase64: String) : SignalingMessage()
 
-    /** Viewer → Recorder: offer への返事 */
+    /** Viewer → Recorder: offer への返事。Viewer の秘密鍵による署名つき */
     @Serializable
     @SerialName("answer")
-    data class Answer(val sdp: String) : SignalingMessage()
+    data class Answer(val sdp: String, val signatureBase64: String) : SignalingMessage()
+
+    /** Recorder → Viewer: この Viewer のペアリングを破棄した。受け取った Viewer は Recorder の登録を消す */
+    @Serializable
+    @SerialName("revoked")
+    class Revoked : SignalingMessage() {
+        override fun equals(other: Any?): Boolean = other is Revoked
+        override fun hashCode(): Int = javaClass.hashCode()
+    }
 
     /** どちらからでも: この接続を終える合図 */
     @Serializable

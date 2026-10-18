@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +22,7 @@ import io.github.mtkw0127.mimamori.ui.theme.MimamoriTheme
 fun RoleSelectScreen(
     onRecorderSelected: () -> Unit,
     onViewerSelected: () -> Unit,
+    onPairedDevicesSelected: () -> Unit,
 ) {
     Scaffold { innerPadding ->
         Column(
@@ -39,6 +41,9 @@ fun RoleSelectScreen(
             OutlinedButton(onClick = onViewerSelected, modifier = Modifier.fillMaxWidth()) {
                 Text("Viewer（見る）")
             }
+            TextButton(onClick = onPairedDevicesSelected) {
+                Text("ペアリング済みの端末を管理")
+            }
         }
     }
 }
@@ -47,6 +52,6 @@ fun RoleSelectScreen(
 @Composable
 private fun RoleSelectScreenPreview() {
     MimamoriTheme {
-        RoleSelectScreen(onRecorderSelected = {}, onViewerSelected = {})
+        RoleSelectScreen(onRecorderSelected = {}, onViewerSelected = {}, onPairedDevicesSelected = {})
     }
 }

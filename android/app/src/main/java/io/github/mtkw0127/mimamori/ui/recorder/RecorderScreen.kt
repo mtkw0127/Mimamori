@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -178,10 +179,46 @@ private fun PairingControls(
     viewModel: RecorderViewModel = hiltViewModel(),
 ) {
     val otp by viewModel.otpCode.collectAsStateWithLifecycle()
+    val pairedViewers by viewModel.pairedViewers.collectAsStateWithLifecycle()
+    var showManageDialog by remember { mutableStateOf(false) }
     val code = otp
+
+    if (showManageDialog) {
+        AlertDialog(
+            onDismissRequest = { showManageDialog = false },
+            title = { Text("ペアリング済みの Viewer") },
+            text = {
+                if (pairedViewers.isEmpty()) {
+                    Text("ペアリング済みの Viewer はありません")
+                } else {
+                    Column {
+                        pairedViewers.forEach { viewer ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    viewer.displayName + " (" + viewer.viewerId.take(8) + ")",
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(onClick = { viewModel.revokeViewer(viewer.viewerId) }) {
+                                    Text("削除")
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showManageDialog = false }) { Text("閉じる") }
+            },
+        )
+    }
+
     if (code == null) {
-        OutlinedButton(onClick = viewModel::startPairing, modifier = modifier) {
-            Text("Viewer を追加")
+        Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+            OutlinedButton(onClick = viewModel::startPairing) { Text("Viewer を追加") }
+            TextButton(onClick = {
+                viewModel.refreshPairedViewers()
+                showManageDialog = true
+            }) { Text("Viewer を管理", color = textColor) }
         }
     } else {
         Column(modifier = modifier, horizontalAlignment = Alignment.End) {

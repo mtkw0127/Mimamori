@@ -10,6 +10,10 @@ import io.github.mtkw0127.mimamori.pairing.PairedViewer
 import io.github.mtkw0127.mimamori.pairing.PairedViewerStore
 import io.github.mtkw0127.mimamori.pairing.constantTimeEquals
 import io.github.mtkw0127.mimamori.pairing.hmacSha256
+import io.github.mtkw0127.mimamori.pairing.newNonceBase64
+import io.github.mtkw0127.mimamori.pairing.signBase64
+import io.github.mtkw0127.mimamori.pairing.signedPayload
+import io.github.mtkw0127.mimamori.pairing.verifySignature
 import io.github.mtkw0127.mimamori.signaling.RecorderNsdAdvertiser
 import io.github.mtkw0127.mimamori.signaling.SignalingConnection
 import io.github.mtkw0127.mimamori.signaling.SignalingMessage
@@ -81,10 +85,38 @@ class RecorderViewModel @Inject constructor(
     private val _otpCode = MutableStateFlow<String?>(null)
     val otpCode: StateFlow<String?> = _otpCode.asStateFlow()
 
+    /** 「Viewer を管理」ダイアログに出す、ペアリング済み Viewer の一覧 */
+    private val _pairedViewers = MutableStateFlow<List<PairedViewer>>(emptyList())
+    val pairedViewers: StateFlow<List<PairedViewer>> = _pairedViewers.asStateFlow()
+
+    /** 今つながっている（認証済みの）Viewer の ID。破棄されたらすぐ切断するために覚えておく */
+    private var activeViewerId: String? = null
+
     private var serverSocket: ServerSocket? = null
     private var connection: SignalingConnection? = null
     private var signalingStarted = false
     private var currentOtp: OtpSession? = null
+
+    fun refreshPairedViewers() {
+        viewModelScope.launch { _pairedViewers.value = pairedViewerStore.all() }
+    }
+
+    /**
+     * Viewer を破棄する（docs/security.md §5）。登録（公開鍵）を消し、今その Viewer とつながっていれば
+     * [SignalingMessage.Revoked] で知らせてから、TCP と PeerConnection を即座に閉じる。
+     */
+    fun revokeViewer(viewerId: String) {
+        viewModelScope.launch {
+            pairedViewerStore.remove(viewerId)
+            _pairedViewers.value = pairedViewerStore.all()
+            if (activeViewerId == viewerId) {
+                val conn = connection
+                runCatching { conn?.send(SignalingMessage.Revoked()) }
+                conn?.close()
+                session.resetConnection()
+            }
+        }
+    }
 
     suspend fun start() = cameraSession.start()
 
@@ -209,7 +241,7 @@ class RecorderViewModel @Inject constructor(
         _otpCode.value = null
         readvertise()
 
-        proceedToWebRtc(conn)
+        proceedToWebRtc(conn, request.viewerId, request.viewerPublicKeyBase64)
     }
 
     private suspend fun handleConnectRequest(conn: SignalingConnection, request: SignalingMessage.ConnectRequest) {
@@ -218,28 +250,53 @@ class RecorderViewModel @Inject constructor(
             conn.send(SignalingMessage.PairingRejected("not paired"))
             return
         }
-        // TODO(M5): nonce への署名で本人確認する（今は viewerId を名乗るだけで通してしまう）
-        proceedToWebRtc(conn)
+
+        // viewerId を名乗っただけでは通さない。登録済みの公開鍵に対応する秘密鍵を持っているか、
+        // 毎回新しい nonce への署名で確かめる（docs/security.md §4）
+        val nonce = newNonceBase64()
+        conn.send(SignalingMessage.Challenge(nonce, identity.id))
+        val response = conn.receiveOne() as? SignalingMessage.ChallengeResponse
+        val payload = signedPayload("challenge", nonce, identity.id, paired.viewerId)
+        if (response == null || !verifySignature(paired.publicKeyBase64, payload, response.signatureBase64)) {
+            conn.send(SignalingMessage.PairingRejected("authentication failed"))
+            return
+        }
+        proceedToWebRtc(conn, paired.viewerId, paired.publicKeyBase64)
     }
 
-    private suspend fun proceedToWebRtc(conn: SignalingConnection) {
-        session.resetConnection()
-        val offerSdp = session.createOffer()
-        conn.send(SignalingMessage.Offer(offerSdp))
+    /**
+     * offer に自分の秘密鍵で署名して送り、返ってきた answer の署名を Viewer の公開鍵で検証する
+     * （docs/security.md §4.2）。SDP に入っている DTLS フィンガープリントごと署名されるので、
+     * 認証した相手と暗号化通信している相手が同じであることまで保証できる。
+     */
+    private suspend fun proceedToWebRtc(conn: SignalingConnection, viewerId: String, viewerPublicKeyBase64: String) {
+        activeViewerId = viewerId
+        try {
+            session.resetConnection()
+            val offerSdp = session.createOffer()
+            val offerSignature = identity.signBase64(signedPayload("offer", identity.id, viewerId, offerSdp))
+            conn.send(SignalingMessage.Offer(offerSdp, offerSignature))
 
-        conn.incoming().collect { message ->
-            when (message) {
-                is SignalingMessage.Answer -> {
-                    session.acceptAnswer(message.sdp)
-                    _signalingStatus.value = SignalingStatus.CONNECTED
+            conn.incoming().collect { message ->
+                when (message) {
+                    is SignalingMessage.Answer -> {
+                        val payload = signedPayload("answer", identity.id, viewerId, message.sdp)
+                        check(verifySignature(viewerPublicKeyBase64, payload, message.signatureBase64)) {
+                            "answer の署名が正しくありません"
+                        }
+                        session.acceptAnswer(message.sdp)
+                        _signalingStatus.value = SignalingStatus.CONNECTED
+                    }
+
+                    is SignalingMessage.Disconnect -> conn.close()
+                    else -> Unit // ここには来ないはず
                 }
-
-                is SignalingMessage.Disconnect -> conn.close()
-                else -> Unit // ここには来ないはず
             }
+            // ここに来るのは、TCP 接続が切れて incoming() の Flow が終わったとき
+            _signalingStatus.value = SignalingStatus.DISCONNECTED
+        } finally {
+            activeViewerId = null
         }
-        // ここに来るのは、TCP 接続が切れて incoming() の Flow が終わったとき
-        _signalingStatus.value = SignalingStatus.DISCONNECTED
     }
 
     private suspend fun readvertise() {
