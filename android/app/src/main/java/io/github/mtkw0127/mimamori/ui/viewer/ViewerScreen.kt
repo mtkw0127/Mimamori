@@ -6,13 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import android.content.res.Configuration
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -31,13 +31,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -75,19 +75,55 @@ fun ViewerScreen(
         )
     }
 
+    val isLandscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // 横向きで映像表示中は、映像をできるだけ大きく見せるため TopAppBar を隠して戻るボタンを重ねる
+    val fullscreenVideo = isLandscape && status == ViewerConnectionStatus.CONNECTED
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Viewer") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
-                },
-            )
+            if (!fullscreenVideo) {
+                TopAppBar(
+                    title = { Text("Viewer") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        }
+                    },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
+        if (status == ViewerConnectionStatus.CONNECTED) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                RemoteVideo(
+                    videoTrack = remoteVideoTrack,
+                    eglBaseContext = viewModel.eglBase.eglBaseContext,
+                )
+                if (fullscreenVideo) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "戻る",
+                            tint = Color.White,
+                        )
+                    }
+                }
+            }
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -110,12 +146,7 @@ fun ViewerScreen(
                     Text("接続しています…", style = MaterialTheme.typography.bodyLarge)
                 }
 
-                ViewerConnectionStatus.CONNECTED -> {
-                    RemoteVideo(
-                        videoTrack = remoteVideoTrack,
-                        eglBaseContext = viewModel.eglBase.eglBaseContext,
-                    )
-                }
+                ViewerConnectionStatus.CONNECTED -> Unit
 
                 ViewerConnectionStatus.DISCONNECTED -> {
                     Text("Recorder との接続が切れました。", style = MaterialTheme.typography.bodyLarge)
@@ -200,16 +231,10 @@ private fun RemoteVideo(
     videoTrack: org.webrtc.VideoTrack?,
     eglBaseContext: org.webrtc.EglBase.Context,
 ) {
-    // Recorder が横向きになったときは、こちらの表示も横長に追従させたい。
-    // SurfaceViewRenderer の RendererEvents が、実際に届いたフレームの
-    // 向き込みのサイズ（width/height + rotation）を教えてくれるので、それで比率を更新する。
-    var aspectRatio by remember { mutableFloatStateOf(9f / 16f) }
-
     if (videoTrack == null) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(aspectRatio)
+                .fillMaxSize()
                 .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
@@ -217,33 +242,17 @@ private fun RemoteVideo(
         }
         return
     }
+    // Recorder のプレビューと同じ見え方にするため、割り当てられた領域いっぱいに表示する
+    // （縦横比の違う領域には SurfaceViewRenderer が映像をクロップして収める）。
+    // 向きが変わっても Compose 側でアスペクト比を計算する必要はない。
     AndroidView(
         factory = { context ->
             SurfaceViewRenderer(context).apply {
-                init(
-                    eglBaseContext,
-                    object : RendererCommon.RendererEvents {
-                        override fun onFirstFrameRendered() = Unit
-                        override fun onFrameResolutionChanged(
-                            videoWidth: Int,
-                            videoHeight: Int,
-                            rotation: Int,
-                        ) {
-                            val rotated = rotation == 90 || rotation == 270
-                            val width = if (rotated) videoHeight else videoWidth
-                            val height = if (rotated) videoWidth else videoHeight
-                            if (width > 0 && height > 0) {
-                                aspectRatio = width.toFloat() / height.toFloat()
-                            }
-                        }
-                    },
-                )
+                init(eglBaseContext, null)
                 setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
             }
         },
         update = { view -> videoTrack.addSink(view) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(aspectRatio),
+        modifier = Modifier.fillMaxSize(),
     )
 }
