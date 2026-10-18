@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- mDNS（NsdManager）のマルチキャストパケットを確実に受信するために必要 -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Viewer: 見守りの通知（顔が見えない・接続が切れた）。Android 13 以降は実行時に許可が必要 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Viewer 専用端末（カメラなし）にもインストールできるよう必須にしない -->
     <uses-feature

@@ -47,6 +47,7 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.timber)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.mlkit.face.detection)
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
     ksp(libs.hilt.compiler)

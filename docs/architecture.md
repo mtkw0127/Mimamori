@@ -83,7 +83,7 @@ Viewer は `_mimamori._tcp` を探し、見つかった Recorder を次のよう
 | 方向 | 用途 |
 | --- | --- |
 | Viewer → Recorder | ペアリング要求 / 接続要求 / 署名 / SDP answer / ICE Candidate |
-| Recorder → Viewer | ペアリング結果 / チャレンジ / 拒否 / SDP offer / ICE Candidate / 破棄通知 |
+| Recorder → Viewer | ペアリング結果 / チャレンジ / 拒否 / SDP offer / ICE Candidate / 破棄通知 / 顔検出の通知状態（`faceAlert`） |
 
 ### 3.3 Recorder App
 

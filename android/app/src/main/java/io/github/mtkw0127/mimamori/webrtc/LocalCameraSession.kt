@@ -104,6 +104,18 @@ class LocalCameraSession @Inject constructor(
 
     data class ZoomInfo(val ratio: Float, val minRatio: Float, val maxRatio: Float)
 
+    /** WebRTC に送るのと同じフレームを、横から受け取りたいもの（顔検出など）用 */
+    fun interface FrameObserver {
+        /**
+         * カメラの解析スレッドから毎フレーム同期的に呼ばれる。[buffer] は呼び出しが終わると解放されるので、
+         * 後で使うならこの中でコピーすること。重い処理をここでするとカメラ映像がカクつく
+         */
+        fun onFrame(buffer: VideoFrame.I420Buffer, rotationDegrees: Int)
+    }
+
+    @Volatile
+    var frameObserver: FrameObserver? = null
+
     sealed class LocalCameraSessionStartException(message: String) : Exception(message) {
         class CameraNotFoundException :
             LocalCameraSessionStartException("There is not available camera.")
@@ -246,12 +258,16 @@ class LocalCameraSession @Inject constructor(
     private fun analyzeFrame(image: ImageProxy, capturerObserver: CapturerObserver) {
         try {
             val rotationDegrees = rotationDegreesFor(sensorOrientation, deviceRotation, _isFrontFacingCamera.value == true)
+            val buffer = image.toI420Buffer()
             val frame = VideoFrame(
-                image.toI420Buffer(),
+                buffer,
                 rotationDegrees,
                 image.imageInfo.timestamp
             )
             capturerObserver.onFrameCaptured(frame)
+            // 顔検出などで失敗しても、映像の送信やフレームの解放は止めない
+            runCatching { frameObserver?.onFrame(buffer, rotationDegrees) }
+                .onFailure { Timber.w(it, "frame observer failed") }
             frame.release()
         } catch (e: Exception) {
             Timber.w(e, "failed to convert a camera frame")

@@ -1,6 +1,11 @@
 package io.github.mtkw0127.mimamori.ui.viewer
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,9 +52,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.mtkw0127.mimamori.signaling.DiscoveredRecorder
@@ -72,7 +80,23 @@ fun ViewerScreen(
     val remoteVideoTrack by viewModel.remoteVideoTrack.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val zoomInfo by viewModel.zoomInfo.collectAsStateWithLifecycle()
+    val faceAlerting by viewModel.faceAlerting.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 見守りの通知（顔が見えない・接続が切れた）を出すため、Android 13 以降では通知の権限をもらっておく。
+    // 断られても映像の上の警告表示は出るので、ここでは結果を見ない
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -123,6 +147,14 @@ fun ViewerScreen(
                     videoTrack = remoteVideoTrack,
                     eglBaseContext = viewModel.eglBase.eglBaseContext,
                 )
+                if (faceAlerting) {
+                    FaceAlertBanner(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .safeDrawingPaddingIf(fullscreenVideo)
+                            .padding(top = 12.dp, start = 56.dp, end = 56.dp),
+                    )
+                }
                 ZoomControl(
                     zoomInfo = zoomInfo,
                     onZoomChange = viewModel::setZoomRatio,
@@ -182,6 +214,27 @@ fun ViewerScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Recorder で顔が一定時間見えていないときに、映像の上に出す警告。
+ * 顔認識は見落としも誤検知もあるので、最終的には映像で確かめてもらう前提の文言にしている
+ */
+@Composable
+private fun FaceAlertBanner(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(Color(0xFFC62828), RoundedCornerShape(12.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("顔が見えません", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Text(
+            "映像で様子を確認してください",
+            color = Color.White,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 

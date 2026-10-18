@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.mtkw0127.mimamori.monitoring.FaceWatcher
 import io.github.mtkw0127.mimamori.pairing.DeviceIdentity
 import io.github.mtkw0127.mimamori.pairing.OtpSession
 import io.github.mtkw0127.mimamori.pairing.PairedViewer
@@ -28,7 +29,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.webrtc.EglBase
@@ -69,6 +72,7 @@ class RecorderViewModel @Inject constructor(
     private val advertiser: RecorderNsdAdvertiser,
     private val identity: DeviceIdentity,
     private val pairedViewerStore: PairedViewerStore,
+    private val faceWatcher: FaceWatcher,
 ) : ViewModel() {
 
     val videoTrack: StateFlow<VideoTrack?> = cameraSession.videoTrack
@@ -80,6 +84,9 @@ class RecorderViewModel @Inject constructor(
     val zoomInfo: StateFlow<LocalCameraSession.ZoomInfo?> = cameraSession.zoomInfo
 
     val connectionState: StateFlow<PeerConnection.PeerConnectionState> = session.connectionState
+
+    /** 顔検出による見守りの状態。カメラが動いていないときは null */
+    val faceWatchState: StateFlow<FaceWatcher.FaceWatchState?> = faceWatcher.state
 
     private val _signalingStatus = MutableStateFlow(SignalingStatus.WAITING_FOR_VIEWER)
     val signalingStatus: StateFlow<SignalingStatus> = _signalingStatus.asStateFlow()
@@ -121,9 +128,17 @@ class RecorderViewModel @Inject constructor(
         }
     }
 
-    suspend fun start() = cameraSession.start()
+    suspend fun start() {
+        cameraSession.start()
+        faceWatcher.start()
+        cameraSession.frameObserver = faceWatcher
+    }
 
-    fun stop() = cameraSession.stop()
+    fun stop() {
+        cameraSession.frameObserver = null
+        faceWatcher.stop()
+        cameraSession.stop()
+    }
 
     fun switchCamera(deviceName: String) = cameraSession.switchTo(deviceName)
 
@@ -282,8 +297,10 @@ class RecorderViewModel @Inject constructor(
 
             coroutineScope {
                 // 接続が確立したら、ズームの状態を Viewer に送り続ける（Viewer のスライダー表示用）。
-                // 受信ループが終わったら（切断されたら）、このコルーチンもキャンセルする
+                // 受信ループが終わったら（切断されたら）、このコルーチンもキャンセルする。
+                // 顔検出の通知状態も同じように送り続ける
                 var zoomJob: Job? = null
+                var faceAlertJob: Job? = null
                 conn.incoming().collect { message ->
                     when (message) {
                         is SignalingMessage.Answer -> {
@@ -301,6 +318,14 @@ class RecorderViewModel @Inject constructor(
                                     }
                                 }
                             }
+                            faceAlertJob = launch {
+                                faceWatcher.state.filterNotNull()
+                                    .map { it.alerting }
+                                    .distinctUntilChanged()
+                                    .collect { alerting ->
+                                        runCatching { conn.send(SignalingMessage.FaceAlert(alerting)) }
+                                    }
+                            }
                         }
 
                         is SignalingMessage.SetZoom -> cameraSession.setZoomRatio(message.ratio)
@@ -309,6 +334,7 @@ class RecorderViewModel @Inject constructor(
                     }
                 }
                 zoomJob?.cancel()
+                faceAlertJob?.cancel()
             }
             // ここに来るのは、TCP 接続が切れて incoming() の Flow が終わったとき
             _signalingStatus.value = SignalingStatus.DISCONNECTED

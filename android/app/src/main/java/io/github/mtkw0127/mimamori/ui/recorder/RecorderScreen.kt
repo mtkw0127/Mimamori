@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -125,13 +126,16 @@ fun RecorderScreen(
                         )
                     }
                 }
-                SignalingStatusLabel(
+                Column(
                     modifier = Modifier
                         .align(if (isLandscape) Alignment.TopEnd else Alignment.TopStart)
                         .safeDrawingPaddingIf(isLandscape)
                         .padding(16.dp),
-                    color = Color.White,
-                )
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    SignalingStatusLabel(color = Color.White)
+                    FaceWatchLabel()
+                }
                 PairingControls(
                     modifier = Modifier
                         .align(if (isLandscape) Alignment.BottomEnd else Alignment.TopEnd)
@@ -175,6 +179,32 @@ private fun SignalingStatusLabel(
         SignalingStatus.FAILED -> "接続に失敗しました"
     }
     Text(text, modifier = modifier, color = color, style = MaterialTheme.typography.bodyMedium)
+}
+
+/**
+ * 顔検出の状態を表示する。カメラの位置を決めるときに、顔がちゃんと検出される向き・距離かを確かめる用。
+ * 通知中（顔が一定時間見えていない）は、離れていても気づけるよう赤地で目立たせる
+ */
+@Composable
+private fun FaceWatchLabel(
+    modifier: Modifier = Modifier,
+    viewModel: RecorderViewModel = hiltViewModel(),
+) {
+    val state by viewModel.faceWatchState.collectAsStateWithLifecycle()
+    val current = state ?: return
+    val (text, background) = when {
+        current.alerting -> "顔が見えません（Viewer に通知中）" to Color(0xFFC62828)
+        current.faceVisible -> "顔を検出しています" to Color.Black.copy(alpha = 0.45f)
+        else -> "顔を探しています…" to Color.Black.copy(alpha = 0.45f)
+    }
+    Text(
+        text,
+        color = Color.White,
+        style = MaterialTheme.typography.labelLarge,
+        modifier = modifier
+            .background(background, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
 }
 
 /**

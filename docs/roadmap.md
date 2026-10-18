@@ -132,6 +132,18 @@ M2 の手作業（コピー＆ペースト）を、mDNS による自動発見と
 | Wi-Fi 切断・IP 変更からの自動再接続 | 🧑‍💻 | 接続状態の監視、mDNS での再検索 |
 | 繋がらないときの原因表示（権限なし・AP アイソレーションなど） | 🤝 | エラーの分類とユーザーへの伝え方 |
 
+## 追加機能: 顔検出による見守り通知
+
+仕様は [product.md §4.5](product.md#45-顔検出による見守り通知)。
+
+| タスク | 担当 | 学習ポイント |
+| --- | --- | --- |
+| ✅ Android: Recorder での顔検出と「顔が見えない」判定 | 🤖 | `FaceWatcher`。ML Kit（モデル同梱版）に 1 秒ごとにフレームを渡し、5 秒見えなければ通知状態。`LocalCameraSession.FrameObserver` で WebRTC に送るのと同じフレームを受け取る |
+| ✅ Android: `faceAlert` メッセージと Viewer の通知 | 🤖 | `ViewerAlertNotifier`。サーバーなしなので FCM ではなく端末内の通知。接続切れ（TCP の終了・PeerConnection の `FAILED`）も通知する |
+| Android: Viewer をバックグラウンドでも動かし続ける（Foreground Service 化） | 🤝 | 今は Viewer のプロセスが OS に終了させられると通知が届かない |
+| Android: 実機（赤ちゃん・暗い部屋）での誤検知・見落としの確認と閾値の調整 | 🧑‍💻 | `ALERT_AFTER_MILLIS` などの定数 |
+| iOS: 顔検出と通知 | 🧑‍💻 | Vision フレームワークの `VNDetectFaceRectanglesRequest`、`UNUserNotificationCenter` |
+
 ---
 
 ## Claude との進め方メモ

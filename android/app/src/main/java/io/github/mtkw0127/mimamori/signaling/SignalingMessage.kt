@@ -97,6 +97,15 @@ sealed class SignalingMessage {
     @SerialName("setZoom")
     data class SetZoom(val ratio: Float) : SignalingMessage()
 
+    /**
+     * Recorder → Viewer: 顔検出による見守りの状態。`alerting` が true のあいだは、
+     * 顔が一定時間見えていない（顔に何かがかかった、またはいなくなった）。
+     * 接続が確立したときと、状態が変わるたびに送る
+     */
+    @Serializable
+    @SerialName("faceAlert")
+    data class FaceAlert(val alerting: Boolean) : SignalingMessage()
+
     /** どちらからでも: この接続を終える合図 */
     @Serializable
     @SerialName("disconnect")

@@ -3,6 +3,7 @@ package io.github.mtkw0127.mimamori.ui.viewer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.mtkw0127.mimamori.monitoring.ViewerAlertNotifier
 import io.github.mtkw0127.mimamori.pairing.DeviceIdentity
 import io.github.mtkw0127.mimamori.pairing.PairedRecorder
 import io.github.mtkw0127.mimamori.pairing.PairedRecorderStore
@@ -55,6 +56,7 @@ class ViewerViewModel @Inject constructor(
     val eglBase: EglBase,
     private val identity: DeviceIdentity,
     private val pairedRecorderStore: PairedRecorderStore,
+    private val alertNotifier: ViewerAlertNotifier,
 ) : ViewModel() {
 
     val discoveredRecorders: StateFlow<List<DiscoveredRecorder>> =
@@ -87,8 +89,30 @@ class ViewerViewModel @Inject constructor(
     private val _zoomInfo = MutableStateFlow<SignalingMessage.ZoomInfo?>(null)
     val zoomInfo: StateFlow<SignalingMessage.ZoomInfo?> = _zoomInfo.asStateFlow()
 
+    /** Recorder で顔が一定時間見えていない（[SignalingMessage.FaceAlert]）。映像の上に警告を出す */
+    private val _faceAlerting = MutableStateFlow(false)
+    val faceAlerting: StateFlow<Boolean> = _faceAlerting.asStateFlow()
+
     private var connection: SignalingConnection? = null
     private var socket: Socket? = null
+
+    /** 通知の文面に出す、今つないでいる Recorder の名前 */
+    private var currentRecorderName: String = "Recorder"
+
+    // 上で宣言した _status などを使うので、この init はそれらの宣言より後に置く
+    init {
+        // Wi-Fi が突然切れたときなど、TCP 側は相手の消失にすぐ気づけない（受信待ちのまま止まる）ことがある。
+        // WebRTC は ICE の疎通確認で数十秒以内に FAILED になるので、そちらでも見守りの停止を検知する
+        viewModelScope.launch {
+            session.connectionState.collect { state ->
+                if (state == PeerConnection.PeerConnectionState.FAILED &&
+                    _status.value == ViewerConnectionStatus.CONNECTED
+                ) {
+                    alertNotifier.notifyMonitoringStopped(currentRecorderName)
+                }
+            }
+        }
+    }
 
     /**
      * 一覧から Recorder をタップしたときに呼ぶ。
@@ -198,9 +222,15 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 映像まで繋がった（[ViewerConnectionStatus.CONNECTED] になった）あとで接続が終わったら、
+     * 見守りが止まったことを通知する。画面を閉じて自分から切ったとき（ViewModel が破棄されたとき）は、
+     * コルーチンがキャンセルされるだけなので通知しない。
+     */
     private fun runConnection(recorder: DiscoveredRecorder, block: suspend (SignalingConnection) -> Unit) {
         viewModelScope.launch {
             _status.value = ViewerConnectionStatus.CONNECTING
+            currentRecorderName = recorder.name
             try {
                 val conn = withContext(Dispatchers.IO) {
                     val sock = Socket(recorder.host, recorder.port).also { socket = it }
@@ -209,14 +239,24 @@ class ViewerViewModel @Inject constructor(
                 connection = conn
                 _status.value = ViewerConnectionStatus.NEGOTIATING
                 block(conn)
+                notifyIfMonitoringStopped(recorder)
                 _status.value = ViewerConnectionStatus.DISCONNECTED
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Timber.e(e, "failed to connect to recorder")
+                notifyIfMonitoringStopped(recorder)
                 _errorMessage.value = e.message ?: e.toString()
                 _status.value = ViewerConnectionStatus.FAILED
+            } finally {
+                _faceAlerting.value = false
             }
+        }
+    }
+
+    private fun notifyIfMonitoringStopped(recorder: DiscoveredRecorder) {
+        if (_status.value == ViewerConnectionStatus.CONNECTED) {
+            alertNotifier.notifyMonitoringStopped(recorder.name)
         }
     }
 
@@ -242,9 +282,20 @@ class ViewerViewModel @Inject constructor(
                     val answerPayload = signedPayload("answer", recorderId, identity.id, answerSdp)
                     conn.send(SignalingMessage.Answer(answerSdp, identity.signBase64(answerPayload)))
                     _status.value = ViewerConnectionStatus.CONNECTED
+                    // 繋ぎ直せたので、前回の「見守りが止まっています」は片付ける
+                    alertNotifier.cancelMonitoringStopped()
                 }
 
                 is SignalingMessage.ZoomInfo -> _zoomInfo.value = message
+
+                is SignalingMessage.FaceAlert -> {
+                    _faceAlerting.value = message.alerting
+                    if (message.alerting) {
+                        alertNotifier.notifyFaceNotVisible(currentRecorderName)
+                    } else {
+                        alertNotifier.cancelFaceNotVisible()
+                    }
+                }
 
                 is SignalingMessage.Revoked -> {
                     forgetRecorder(recorderId)
