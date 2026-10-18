@@ -40,10 +40,36 @@ class SignalingConnection(private val socket: Socket) {
     }
 
     /**
+     * 1行だけメッセージを受け取る。接続が切れていれば null。
+     *
+     * 最初の1通だけ見て分岐したいとき（[io.github.mtkw0127.mimamori.ui.recorder.RecorderViewModel]
+     * の PairingRequest/ConnectRequest の振り分けなど）は、[incoming] の Flow を `.first()` で
+     * 使ってはいけない: `incoming()` は [flowOn] でスレッドを分けているため、`.first()` が
+     * 1件受け取ってキャンセルしようとしても、ブロッキング呼び出しである `readLine()` の途中では
+     * キャンセルが効かず、次の行（本来 [acceptOfferAndCreateAnswer] 等が読むはずの offer/answer）
+     * まで読み進めてしまい、取りこぼす（実機で接続が「接続中」のまま進まなくなる形で踏んだ）。
+     */
+    suspend fun receiveOne(): SignalingMessage? = withContext(Dispatchers.IO) {
+        while (true) {
+            val line = reader.readLine() ?: return@withContext null
+            if (line.isBlank()) continue
+            return@withContext try {
+                json.decodeFromString(SignalingMessage.serializer(), line)
+            } catch (e: Exception) {
+                Timber.w(e, "failed to parse signaling message: %s", line)
+                null
+            }
+        }
+        @Suppress("UNREACHABLE_CODE")
+        null
+    }
+
+    /**
      * 届いたメッセージを順番に流す [Flow]。接続が切れる（`readLine()` が null を返す）か、
      * JSON として解釈できない行が来たら完了する。
      *
      * `readLine()` はブロッキング呼び出しなので [Dispatchers.IO] 上で行う（[flowOn]）。
+     * 1件だけ読みたいときは `.first()` で使わず、[receiveOne] を使うこと（上記参照）。
      */
     fun incoming(): Flow<SignalingMessage> = flow {
         while (currentCoroutineContext().isActive) {

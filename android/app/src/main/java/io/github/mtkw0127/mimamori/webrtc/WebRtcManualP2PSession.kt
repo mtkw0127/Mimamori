@@ -138,6 +138,15 @@ class WebRtcManualP2PSession @Inject constructor(
         cameraSession.stop()
     }
 
+    override fun resetConnection() {
+        peerConnection?.close()
+        peerConnection = null
+        peerConnectionObserver = null
+        iceGatheringComplete = null
+        _connectionState.value = PeerConnection.PeerConnectionState.NEW
+        _remoteVideoTrack.value = null
+    }
+
     private suspend fun PeerConnection.createAnswerSuspend(): SessionDescription {
         return suspendCancellableCoroutine { cont ->
             val observer = object : SdpObserver {

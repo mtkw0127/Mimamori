@@ -18,6 +18,41 @@ import kotlinx.serialization.Serializable
 @Serializable
 sealed class SignalingMessage {
 
+    /**
+     * Viewer → Recorder: 接続してきた最初の1通。
+     *
+     * 初めての Viewer は [PairingRequest]、ペアリング済みの Viewer は [ConnectRequest] を送る
+     * （どちらを送るかは、mDNS の TXT レコードの `id` が自分の知っている Recorder かどうかで判断する）。
+     */
+
+    /** 初めてのペアリング（docs/security.md §3.2）。OTP そのものは送らず、OTP を鍵にした HMAC だけを送る */
+    @Serializable
+    @SerialName("pairingRequest")
+    data class PairingRequest(
+        val viewerId: String,
+        val viewerPublicKeyBase64: String,
+        val hmacBase64: String,
+    ) : SignalingMessage()
+
+    /** Recorder → Viewer: ペアリング成功。Recorder 側の公開鍵と、相互確認用の HMAC を返す */
+    @Serializable
+    @SerialName("pairingAccepted")
+    data class PairingAccepted(
+        val recorderId: String,
+        val recorderPublicKeyBase64: String,
+        val hmacBase64: String,
+    ) : SignalingMessage()
+
+    /** Recorder → Viewer: ペアリング失敗（OTP が違う/期限切れ/今はペアリング受付中でない、など） */
+    @Serializable
+    @SerialName("pairingRejected")
+    data class PairingRejected(val reason: String) : SignalingMessage()
+
+    /** ペアリング済みの Viewer が、2回目以降に送る接続要求。OTP は不要 */
+    @Serializable
+    @SerialName("connectRequest")
+    data class ConnectRequest(val viewerId: String) : SignalingMessage()
+
     /** Recorder → Viewer: 映像の offer */
     @Serializable
     @SerialName("offer")

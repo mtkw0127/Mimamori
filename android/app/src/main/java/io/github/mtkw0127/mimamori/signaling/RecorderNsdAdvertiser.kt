@@ -33,9 +33,21 @@ class RecorderNsdAdvertiser @Inject constructor(
     /**
      * `_mimamori._tcp.` として告知を始める。既に重複した名前が使われていれば、
      * Android 側が自動で名前を調整してくれる（実際に登録された名前を返す）。
+     *
+     * [attributes] は TXT レコードとして一緒に流す付加情報。`docs/architecture.md` §3.1 の
+     * `id`（Recorder を一意に表す ID。ペアリング済みかどうかの判定に使う）と
+     * `pairing`（`"1"` ならペアリング受付中、`"0"` ならそれ以外）を想定している。
+     * ここは誰でも見られる情報なので、秘密情報は絶対に入れないこと。
      */
-    suspend fun advertise(serviceName: String, port: Int): String =
+    suspend fun advertise(
+        serviceName: String,
+        port: Int,
+        attributes: Map<String, String> = emptyMap(),
+    ): String =
         suspendCancellableCoroutine { continuation ->
+            // TXT の内容（pairing フラグなど）を変えて告知し直すときのために、前の登録を必ず解除しておく
+            stop()
+
             // mDNS はマルチキャスト通信を使うので、確実に受信/送信できるようロックを取っておく
             // （取らなくても動く端末もあるが、取らないと発見できない端末が実際にある）
             val lock = wifiManager.createMulticastLock("mimamori-advertise").apply {
@@ -48,6 +60,7 @@ class RecorderNsdAdvertiser @Inject constructor(
                 this.serviceName = serviceName
                 serviceType = MIMAMORI_SERVICE_TYPE
                 this.port = port
+                attributes.forEach { (key, value) -> setAttribute(key, value) }
             }
             val listener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(info: NsdServiceInfo) {

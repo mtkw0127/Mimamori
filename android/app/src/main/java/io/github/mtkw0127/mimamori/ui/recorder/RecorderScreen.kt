@@ -24,9 +24,11 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -109,6 +111,12 @@ fun RecorderScreen(
                         .padding(16.dp),
                     color = Color.White,
                 )
+                PairingControls(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                    textColor = Color.White,
+                )
             }
         } else {
             Column(
@@ -119,7 +127,14 @@ fun RecorderScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (hasCameraPermission) {
-                    SignalingStatusLabel()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SignalingStatusLabel()
+                        PairingControls()
+                    }
                     CameraPreview(modifier = Modifier.weight(1f))
                 } else {
                     Text(
@@ -151,6 +166,36 @@ private fun SignalingStatusLabel(
         SignalingStatus.FAILED -> "接続に失敗しました"
     }
     Text(text, modifier = modifier, color = color, style = MaterialTheme.typography.bodyMedium)
+}
+
+/**
+ * 「Viewer を追加」ボタンと、ペアリング受付中は代わりに OTP を表示する（M4）。
+ * OTP はこの画面を見ている人にしか分からないので、これを入力できる Viewer だけが
+ * ペアリングできる（docs/security.md §3.2）。
+ */
+@Composable
+private fun PairingControls(
+    modifier: Modifier = Modifier,
+    textColor: Color = Color.Unspecified,
+    viewModel: RecorderViewModel = hiltViewModel(),
+) {
+    val otp by viewModel.otpCode.collectAsStateWithLifecycle()
+    val code = otp
+    if (code == null) {
+        OutlinedButton(onClick = viewModel::startPairing, modifier = modifier) {
+            Text("Viewer を追加")
+        }
+    } else {
+        Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+            Text(
+                "この番号を Viewer に入力してもらってください",
+                color = textColor,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(code, color = textColor, style = MaterialTheme.typography.headlineMedium)
+            TextButton(onClick = viewModel::cancelPairing) { Text("キャンセル") }
+        }
+    }
 }
 
 /**

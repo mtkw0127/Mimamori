@@ -33,4 +33,11 @@ interface ManualP2PSession {
 
     /** PeerConnection とカメラなどのリソースを解放する */
     fun close()
+
+    /**
+     * PeerConnection だけを作り直せる状態に戻す（カメラは触らない）。
+     * M4 以降、Recorder は1回のアプリ起動中に複数回 Viewer と繋ぎ直す可能性があるので、
+     * 2人目以降の Viewer と話すときに、前の Viewer の PeerConnection を引きずらないようにする。
+     */
+    fun resetConnection()
 }

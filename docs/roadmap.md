@@ -83,13 +83,17 @@ M2 の手作業（コピー＆ペースト）を、mDNS による自動発見と
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| OTP 生成・表示・有効期限、TXT の `pairing` フラグ切り替え | 🧑‍💻 | 暗号学的に安全な乱数 |
-| 端末鍵ペアの生成と保管 | 🧑‍💻 | iOS: CryptoKit + Secure Enclave / Android: Keystore |
-| HMAC による証明の作成・検証 | 🧑‍💻 | [security.md §3.2](security.md#32-ペアリングの流れ) |
-| iOS ⇄ Android での鍵・署名形式の相互運用 | 🧑‍💻 | DER / raw 形式の違い（ハマりどころ） |
+| ✅ Android: OTP 生成・表示・有効期限、TXT の `pairing` フラグ切り替え | 🤖 | `OtpSession`（`SecureRandom` で6桁生成、5分で失効）。有効期限が切れたら自動で TXT の `pairing` を `0` に戻す |
+| iOS: 同上 | 🧑‍💻 | 暗号学的に安全な乱数 |
+| ✅ Android: 端末鍵ペアの生成と保管 | 🤖 | `DeviceIdentity`。`AndroidKeyStore` に ECDSA P-256 鍵ペアを生成し、秘密鍵は端末から出さない |
+| iOS: 同上 | 🧑‍💻 | CryptoKit + Secure Enclave |
+| ✅ Android: HMAC による証明の作成・検証 | 🤖 | `Hmac.kt`。[security.md §3.2](security.md#32-ペアリングの流れ) のラベル付き HMAC と定数時間比較（`constantTimeEquals`） |
+| iOS: 同上 | 🧑‍💻 | — |
+| iOS ⇄ Android での鍵・署名形式の相互運用 | 🧑‍💻 | DER / raw 形式の違い（ハマりどころ）。iOS 側実装までは未検証 |
 | iOS: ペアリング画面の UI（OTP 表示・入力） | 🧑‍💻 | 画面遷移（`NavigationStack`）、`@Observable` による ViewModel との連携、キーボード・フォーカス制御（`@FocusState`）、有効期限のカウントダウン表示 |
-| Android: ペアリング画面の UI | 🤖 | — |
-| Recorder 側の失敗回数制限 | 🧑‍💻 | 総当たり対策（[security.md §3.1](security.md#31-otp)） |
+| ✅ Android: ペアリング画面の UI | 🤖 | `RecorderScreen` の OTP 表示、`ViewerScreen` の OTP 入力ダイアログ・ペアリング状態バッジ |
+| ✅ Android: Recorder 側の失敗回数制限 | 🤖 | `OtpSession.recordFailure()`（5回で `isLocked` になり、その OTP を破棄）。総当たり対策（[security.md §3.1](security.md#31-otp)） |
+| iOS: 同上 | 🧑‍💻 | — |
 
 ## M5. 再接続認証と破棄
 

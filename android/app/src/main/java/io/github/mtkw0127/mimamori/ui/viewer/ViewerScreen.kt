@@ -5,31 +5,39 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -46,6 +54,8 @@ fun ViewerScreen(
 ) {
     val status by viewModel.status.collectAsStateWithLifecycle()
     val recorders by viewModel.discoveredRecorders.collectAsStateWithLifecycle()
+    val pairedRecorderIds by viewModel.pairedRecorderIds.collectAsStateWithLifecycle()
+    val pairingTarget by viewModel.pairingTarget.collectAsStateWithLifecycle()
     val remoteVideoTrack by viewModel.remoteVideoTrack.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -55,6 +65,13 @@ fun ViewerScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.onErrorShown()
         }
+    }
+
+    if (pairingTarget != null) {
+        OtpEntryDialog(
+            onConfirm = viewModel::submitOtp,
+            onDismiss = viewModel::cancelPairingDialog,
+        )
     }
 
     Scaffold(
@@ -81,7 +98,8 @@ fun ViewerScreen(
                 ViewerConnectionStatus.IDLE -> {
                     RecorderList(
                         recorders = recorders,
-                        onSelect = viewModel::connect,
+                        pairedRecorderIds = pairedRecorderIds,
+                        onSelect = viewModel::selectRecorder,
                     )
                 }
 
@@ -113,6 +131,7 @@ fun ViewerScreen(
 @Composable
 private fun RecorderList(
     recorders: List<DiscoveredRecorder>,
+    pairedRecorderIds: Set<String>,
     onSelect: (DiscoveredRecorder) -> Unit,
 ) {
     if (recorders.isEmpty()) {
@@ -124,19 +143,55 @@ private fun RecorderList(
     }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(recorders, key = { it.name }) { recorder ->
+            val isPaired = recorder.recorderId != null && recorder.recorderId in pairedRecorderIds
+            val subtitle = when {
+                isPaired -> "ペアリング済み・タップして接続"
+                recorder.isPairingOpen -> "ペアリング待ち受け中・タップして OTP を入力"
+                else -> "ペアリングされていません"
+            }
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onSelect(recorder) },
             ) {
-                Text(
-                    text = recorder.name,
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(recorder.name, style = MaterialTheme.typography.titleMedium)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }
+}
+
+@Composable
+private fun OtpEntryDialog(
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ペアリング") },
+        text = {
+            Column {
+                Text("Recorder の画面に表示されている6桁の番号を入力してください。")
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { if (it.length <= 6) code = it.filter(Char::isDigit) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(code) }, enabled = code.length == 6) {
+                Text("ペアリング")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("キャンセル") }
+        },
+    )
 }
 
 @Composable

@@ -18,6 +18,10 @@ data class DiscoveredRecorder(
     val name: String,
     val host: InetAddress,
     val port: Int,
+    /** TXT レコードの `id`。ペアリング済みかどうかを [PairedRecorderStore][io.github.mtkw0127.mimamori.pairing.PairedRecorderStore] と突き合わせるのに使う */
+    val recorderId: String?,
+    /** TXT レコードの `pairing`。`true` なら今ちょうどペアリングを受け付けている */
+    val isPairingOpen: Boolean,
 )
 
 /**
@@ -58,7 +62,15 @@ class ViewerNsdDiscoverer @Inject constructor(
             override fun onServiceResolved(info: NsdServiceInfo) {
                 @Suppress("DEPRECATION")
                 val host = info.host ?: return
-                found[info.serviceName] = DiscoveredRecorder(info.serviceName, host, info.port)
+                val recorderId = info.attributes["id"]?.toString(Charsets.UTF_8)
+                val isPairingOpen = info.attributes["pairing"]?.toString(Charsets.UTF_8) == "1"
+                found[info.serviceName] = DiscoveredRecorder(
+                    name = info.serviceName,
+                    host = host,
+                    port = info.port,
+                    recorderId = recorderId,
+                    isPairingOpen = isPairingOpen,
+                )
                 sendCurrentList()
             }
         }
