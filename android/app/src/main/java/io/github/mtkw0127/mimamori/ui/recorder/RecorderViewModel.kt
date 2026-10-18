@@ -22,10 +22,13 @@ import io.github.mtkw0127.mimamori.webrtc.LocalCameraSession
 import io.github.mtkw0127.mimamori.webrtc.ManualP2PSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.webrtc.EglBase
@@ -277,20 +280,35 @@ class RecorderViewModel @Inject constructor(
             val offerSignature = identity.signBase64(signedPayload("offer", identity.id, viewerId, offerSdp))
             conn.send(SignalingMessage.Offer(offerSdp, offerSignature))
 
-            conn.incoming().collect { message ->
-                when (message) {
-                    is SignalingMessage.Answer -> {
-                        val payload = signedPayload("answer", identity.id, viewerId, message.sdp)
-                        check(verifySignature(viewerPublicKeyBase64, payload, message.signatureBase64)) {
-                            "answer の署名が正しくありません"
+            coroutineScope {
+                // 接続が確立したら、ズームの状態を Viewer に送り続ける（Viewer のスライダー表示用）。
+                // 受信ループが終わったら（切断されたら）、このコルーチンもキャンセルする
+                var zoomJob: Job? = null
+                conn.incoming().collect { message ->
+                    when (message) {
+                        is SignalingMessage.Answer -> {
+                            val payload = signedPayload("answer", identity.id, viewerId, message.sdp)
+                            check(verifySignature(viewerPublicKeyBase64, payload, message.signatureBase64)) {
+                                "answer の署名が正しくありません"
+                            }
+                            session.acceptAnswer(message.sdp)
+                            _signalingStatus.value = SignalingStatus.CONNECTED
+                            zoomJob = launch {
+                                cameraSession.zoomInfo.filterNotNull().collect { zoom ->
+                                    // 切断と行き違って送れなかった分は捨てる（受信ループ側が切断を扱う）
+                                    runCatching {
+                                        conn.send(SignalingMessage.ZoomInfo(zoom.ratio, zoom.minRatio, zoom.maxRatio))
+                                    }
+                                }
+                            }
                         }
-                        session.acceptAnswer(message.sdp)
-                        _signalingStatus.value = SignalingStatus.CONNECTED
-                    }
 
-                    is SignalingMessage.Disconnect -> conn.close()
-                    else -> Unit // ここには来ないはず
+                        is SignalingMessage.SetZoom -> cameraSession.setZoomRatio(message.ratio)
+                        is SignalingMessage.Disconnect -> conn.close()
+                        else -> Unit // ここには来ないはず
+                    }
                 }
+                zoomJob?.cancel()
             }
             // ここに来るのは、TCP 接続が切れて incoming() の Flow が終わったとき
             _signalingStatus.value = SignalingStatus.DISCONNECTED

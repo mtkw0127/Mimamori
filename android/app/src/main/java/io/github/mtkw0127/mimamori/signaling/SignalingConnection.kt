@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import timber.log.Timber
@@ -30,12 +32,20 @@ class SignalingConnection(private val socket: Socket) {
     private val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream()))
     private val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
 
+    /**
+     * 受信ループとは別のコルーチン（ズーム操作など）からも送るので、
+     * 2つのメッセージの書き込みが混ざって1行が壊れないよう、送信は1つずつにする
+     */
+    private val sendMutex = Mutex()
+
     suspend fun send(message: SignalingMessage) {
         val line = json.encodeToString(SignalingMessage.serializer(), message)
-        withContext(Dispatchers.IO) {
-            writer.write(line)
-            writer.newLine()
-            writer.flush()
+        sendMutex.withLock {
+            withContext(Dispatchers.IO) {
+                writer.write(line)
+                writer.newLine()
+                writer.flush()
+            }
         }
     }
 

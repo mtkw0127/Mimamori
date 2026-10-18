@@ -1,5 +1,6 @@
 package io.github.mtkw0127.mimamori.ui.viewer
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,10 +11,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
-import android.content.res.Configuration
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -24,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -33,11 +36,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.KeyboardType
@@ -46,6 +51,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.mtkw0127.mimamori.signaling.DiscoveredRecorder
+import io.github.mtkw0127.mimamori.signaling.SignalingMessage
+import kotlinx.coroutines.delay
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
@@ -61,6 +68,7 @@ fun ViewerScreen(
     val pairingTarget by viewModel.pairingTarget.collectAsStateWithLifecycle()
     val remoteVideoTrack by viewModel.remoteVideoTrack.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val zoomInfo by viewModel.zoomInfo.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(errorMessage) {
@@ -109,6 +117,13 @@ fun ViewerScreen(
                     videoTrack = remoteVideoTrack,
                     eglBaseContext = viewModel.eglBase.eglBaseContext,
                 )
+                ZoomControl(
+                        zoomInfo = zoomInfo,
+                        onZoomChange = viewModel::setZoomRatio,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp),
+                    )
                 if (fullscreenVideo) {
                     IconButton(
                         onClick = onBack,
@@ -280,4 +295,68 @@ private fun RemoteVideo(
         update = { view -> videoTrack.addSink(view) },
         modifier = if (fitWhole) Modifier.aspectRatio(videoAspect) else Modifier.fillMaxSize(),
     )
+}
+
+/**
+ * Recorder のカメラのズーム倍率を遠隔で変える UI。
+ *
+ * 映像の邪魔にならないよう、普段は倍率だけの小さなボタンにしておき、
+ * タップしたときだけ短いスライダーを出す。操作が止まってしばらくしたら自動で閉じる。
+ *
+ * ドラッグ中は手元の値を表示する: Recorder から返ってくる倍率をそのまま表示すると、
+ * 送った値と返ってきた値が行き違って、つまみが指の位置からガタつくため。
+ * 指を離したら Recorder から届いた値の表示に戻す。
+ */
+@Composable
+private fun ZoomControl(
+    zoomInfo: SignalingMessage.ZoomInfo?,
+    onZoomChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val zoom = zoomInfo?.takeIf { it.maxRatio > it.minRatio } ?: return
+    var expanded by remember { mutableStateOf(false) }
+    var draggingRatio by remember { mutableStateOf<Float?>(null) }
+    // 最後に操作した時刻。これが変わるたびに自動で閉じるまでのタイマーをやり直す
+    var lastInteraction by remember { mutableLongStateOf(0L) }
+    val ratio = draggingRatio ?: zoom.ratio
+
+    LaunchedEffect(expanded, lastInteraction, draggingRatio) {
+        if (expanded && draggingRatio == null) {
+            delay(3_000)
+            expanded = false
+        }
+    }
+
+    Row(
+        modifier = modifier.background(Color.Black.copy(alpha = 0.45f), CircleShape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (expanded) {
+            Slider(
+                value = ratio.coerceIn(zoom.minRatio, zoom.maxRatio),
+                onValueChange = {
+                    draggingRatio = it
+                    lastInteraction = System.currentTimeMillis()
+                    onZoomChange(it)
+                },
+                onValueChangeFinished = { draggingRatio = null },
+                valueRange = zoom.minRatio..zoom.maxRatio,
+                modifier = Modifier
+                    .width(160.dp)
+                    .padding(start = 12.dp),
+            )
+        }
+        Text(
+            "%.1fx".format(ratio),
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable {
+                    expanded = !expanded
+                    lastInteraction = System.currentTimeMillis()
+                }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
 }

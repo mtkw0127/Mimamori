@@ -83,6 +83,10 @@ class ViewerViewModel @Inject constructor(
     private val _pairingTarget = MutableStateFlow<DiscoveredRecorder?>(null)
     val pairingTarget: StateFlow<DiscoveredRecorder?> = _pairingTarget.asStateFlow()
 
+    /** Recorder から届いた、Recorder のカメラのズーム状態。まだ届いていなければ null */
+    private val _zoomInfo = MutableStateFlow<SignalingMessage.ZoomInfo?>(null)
+    val zoomInfo: StateFlow<SignalingMessage.ZoomInfo?> = _zoomInfo.asStateFlow()
+
     private var connection: SignalingConnection? = null
     private var socket: Socket? = null
 
@@ -117,6 +121,15 @@ class ViewerViewModel @Inject constructor(
         val recorder = _pairingTarget.value ?: return
         _pairingTarget.value = null
         pairAndConnect(recorder, otp)
+    }
+
+    /** Recorder のカメラのズーム倍率を変える。実際の倍率は Recorder から [zoomInfo] として返ってくる */
+    fun setZoomRatio(ratio: Float) {
+        val conn = connection ?: return
+        viewModelScope.launch {
+            runCatching { conn.send(SignalingMessage.SetZoom(ratio)) }
+                .onFailure { Timber.w(it, "failed to send zoom request") }
+        }
     }
 
     fun onErrorShown() {
@@ -217,6 +230,7 @@ class ViewerViewModel @Inject constructor(
         recorderPublicKeyBase64: String,
     ) {
         session.resetConnection()
+        _zoomInfo.value = null
         conn.incoming().collect { message ->
             when (message) {
                 is SignalingMessage.Offer -> {
@@ -229,6 +243,8 @@ class ViewerViewModel @Inject constructor(
                     conn.send(SignalingMessage.Answer(answerSdp, identity.signBase64(answerPayload)))
                     _status.value = ViewerConnectionStatus.CONNECTED
                 }
+
+                is SignalingMessage.ZoomInfo -> _zoomInfo.value = message
 
                 is SignalingMessage.Revoked -> {
                     forgetRecorder(recorderId)

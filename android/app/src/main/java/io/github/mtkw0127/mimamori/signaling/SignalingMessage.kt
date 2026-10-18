@@ -84,6 +84,19 @@ sealed class SignalingMessage {
         override fun hashCode(): Int = javaClass.hashCode()
     }
 
+    /**
+     * Recorder → Viewer: 今のカメラのズーム倍率と、変えられる範囲。
+     * 接続が確立したときと、倍率やレンズが変わるたびに送る
+     */
+    @Serializable
+    @SerialName("zoomInfo")
+    data class ZoomInfo(val ratio: Float, val minRatio: Float, val maxRatio: Float) : SignalingMessage()
+
+    /** Viewer → Recorder: Recorder のカメラのズーム倍率を変えてほしい（範囲外なら Recorder 側で丸める） */
+    @Serializable
+    @SerialName("setZoom")
+    data class SetZoom(val ratio: Float) : SignalingMessage()
+
     /** どちらからでも: この接続を終える合図 */
     @Serializable
     @SerialName("disconnect")
