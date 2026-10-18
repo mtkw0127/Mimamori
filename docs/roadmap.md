@@ -70,14 +70,14 @@ M2 の手作業（コピー＆ペースト）を、mDNS による自動発見と
 
 | タスク | 担当 | 学習ポイント |
 | --- | --- | --- |
-| メッセージ形式（JSON スキーマ）の設計 | 🧑‍💻 | iOS と Android で共有する「プロトコル」を自分で設計する経験 |
+| ✅ メッセージ形式（JSON スキーマ）の設計 | 🧑‍💻 | iOS と Android で共有する「プロトコル」を自分で設計する経験。`offer`/`answer`/`disconnect` の3種類、`type` で区別（`SignalingMessage`） |
 | iOS: `NWListener` での告知・待ち受け / `NWBrowser` での検索 | 🧑‍💻 | Network フレームワーク、Bonjour の TXT レコード、ローカルネットワーク権限 |
 | iOS: `NWConnection` での改行区切り JSON の送受信 | 🧑‍💻 | TCP はメッセージの区切りを保証しない（受信バッファの扱い）、`Codable` |
-| Android: `NsdManager` での告知・検索 | 🤝 | コールバック API を `Flow` にする部分は Claude、使う側は自分で |
-| Android: TCP の待ち受け・接続と改行区切り JSON の送受信 | 🤝 | `ServerSocket` / `Socket` と Coroutines（`Dispatchers.IO`） |
-| M2 の手動交換をこの仕組みに置き換え | 🧑‍💻 | — |
+| ✅ Android: `NsdManager` での告知・検索 | 🤝 | `RecorderNsdAdvertiser`/`ViewerNsdDiscoverer`。コールバック API を `suspend fun`/`Flow` にする部分、`WifiManager.MulticastLock` が必要な点 |
+| ✅ Android: TCP の待ち受け・接続と改行区切り JSON の送受信 | 🤝 | `SignalingConnection`。`ServerSocket` / `Socket` と Coroutines（`Dispatchers.IO`） |
+| ✅ M2 の手動交換をこの仕組みに置き換え | 🧑‍💻 | `RecorderViewModel`/`ViewerViewModel` が自動で offer/answer をやり取り。エミュレーター2台での LAN 内疎通を確認済み |
 | iOS: 見つかった Recorder の一覧 UI | 🧑‍💻 | `List`、発見・消失に応じたリアルタイム更新 |
-| Android: 見つかった Recorder の一覧 UI | 🤖 | — |
+| ✅ Android: 見つかった Recorder の一覧 UI | 🤖 | `ViewerScreen` の `LazyColumn` |
 
 ## M4. ペアリング（OTP）
 
