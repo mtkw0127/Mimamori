@@ -78,6 +78,8 @@ M2 の手作業（コピー＆ペースト）を、mDNS による自動発見と
 | ✅ M2 の手動交換をこの仕組みに置き換え | 🧑‍💻 | `RecorderViewModel`/`ViewerViewModel` が自動で offer/answer をやり取り。エミュレーター2台での LAN 内疎通を確認済み |
 | iOS: 見つかった Recorder の一覧 UI | 🧑‍💻 | `List`、発見・消失に応じたリアルタイム更新 |
 | ✅ Android: 見つかった Recorder の一覧 UI | 🤖 | `ViewerScreen` の `LazyColumn` |
+| ✅ Android: 端末の回転（縦・横）に追従した映像表示 | 🤖 | Recorder は回転角を自前で計算して `VideoFrame` に付与、Viewer は向きが揃うときは全面表示・食い違うときは全体が見えるよう縦横比を保って表示（`RendererEvents.onFrameResolutionChanged` でフレームの縦横比を取得）。横向きでは TopAppBar を隠す |
+| iOS: 回転への追従（Recorder / Viewer） | 🧑‍💻 | `RTCVideoFrame.rotation` と `RTCVideoRenderer` の `setSize`、SwiftUI での向き変更の検知 |
 
 ## M4. ペアリング（OTP）
 
