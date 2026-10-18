@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -242,17 +244,40 @@ private fun RemoteVideo(
         }
         return
     }
-    // Recorder のプレビューと同じ見え方にするため、割り当てられた領域いっぱいに表示する
-    // （縦横比の違う領域には SurfaceViewRenderer が映像をクロップして収める）。
-    // 向きが変わっても Compose 側でアスペクト比を計算する必要はない。
+    // 映像の縦横比。Recorder が回転すると変わるので、届いたフレームのサイズから更新する。
+    var videoAspect by remember { mutableFloatStateOf(0f) }
+    val isViewerLandscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isVideoLandscape = videoAspect > 1f
+    // 向きが揃っているときは Recorder のプレビューと同じく領域いっぱいに表示する。
+    // 向きが食い違うとき（Recorder が横・Viewer が縦など）は、クロップすると端が切れるので、
+    // 映像全体が見えるよう縦横比を保って収める。
+    val fitWhole = videoAspect > 0f && isVideoLandscape != isViewerLandscape
     AndroidView(
         factory = { context ->
             SurfaceViewRenderer(context).apply {
-                init(eglBaseContext, null)
+                init(
+                    eglBaseContext,
+                    object : RendererCommon.RendererEvents {
+                        override fun onFirstFrameRendered() = Unit
+                        override fun onFrameResolutionChanged(
+                            videoWidth: Int,
+                            videoHeight: Int,
+                            rotation: Int,
+                        ) {
+                            val rotated = rotation == 90 || rotation == 270
+                            val width = if (rotated) videoHeight else videoWidth
+                            val height = if (rotated) videoWidth else videoHeight
+                            if (width > 0 && height > 0) {
+                                videoAspect = width.toFloat() / height.toFloat()
+                            }
+                        }
+                    },
+                )
                 setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
             }
         },
         update = { view -> videoTrack.addSink(view) },
-        modifier = Modifier.fillMaxSize(),
+        modifier = if (fitWhole) Modifier.aspectRatio(videoAspect) else Modifier.fillMaxSize(),
     )
 }
