@@ -85,58 +85,56 @@ fun RecorderScreen(
             }
         },
     ) { innerPadding ->
-        if (hasCameraPermission && isLandscape) {
-            // 戻るボタンと接続状態を、プレビューの上に浮かせて表示する
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            ) {
+        // CameraPreview() の呼び出しは、向きが変わっても絶対にここ1箇所だけにする。
+        // 以前は landscape/portrait で別々の if/else 分岐の中にそれぞれ CameraPreview() を
+        // 置いていたが、回転でその分岐が切り替わるたびに Compose が古い方を破棄・新しい方を
+        // 新規マウントしてしまい、DisposableEffect の onDispose（= カメラと VideoTrack の破棄）
+        // と LaunchedEffect の再実行（= 新しい VideoTrack の生成）が起きていた。
+        // 新しい VideoTrack はすでにネゴシエーション済みの PeerConnection には繋がらないので、
+        // 結果として Viewer 側の映像が回転のたびに永久に止まっていた。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            if (hasCameraPermission) {
                 CameraPreview(modifier = Modifier.fillMaxSize())
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp),
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "戻る",
-                        tint = Color.White,
-                    )
+
+                // 横向きのときだけ、戻るボタンをプレビューの上に浮かせて表示する
+                // （縦向きは Scaffold の topBar 側に出ている）
+                if (isLandscape) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "戻る",
+                            tint = Color.White,
+                        )
+                    }
                 }
                 SignalingStatusLabel(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(if (isLandscape) Alignment.TopEnd else Alignment.TopStart)
                         .padding(16.dp),
                     color = Color.White,
                 )
                 PairingControls(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
+                        .align(if (isLandscape) Alignment.BottomEnd else Alignment.TopEnd)
                         .padding(16.dp),
                     textColor = Color.White,
                 )
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                if (hasCameraPermission) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SignalingStatusLabel()
-                        PairingControls()
-                    }
-                    CameraPreview(modifier = Modifier.weight(1f))
-                } else {
+            } else {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     Text(
                         "映像を撮影するにはカメラの権限が必要です。",
                         style = MaterialTheme.typography.bodyLarge,
@@ -225,6 +223,14 @@ private fun CameraPreview(
     }
     DisposableEffect(Unit) {
         onDispose { viewModel.stop() }
+    }
+
+    // 端末を回転させるたびに、カメラの「正立させるための回転角」を更新する。
+    // （MainActivity は configChanges で回転時の再生成を止めているので、ここで自分で検知する必要がある）
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    LaunchedEffect(configuration.orientation) {
+        viewModel.updateRotation(ContextCompat.getDisplayOrDefault(context).rotation)
     }
 
     Box(modifier = modifier.fillMaxWidth()) {

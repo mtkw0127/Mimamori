@@ -31,6 +31,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -199,11 +200,16 @@ private fun RemoteVideo(
     videoTrack: org.webrtc.VideoTrack?,
     eglBaseContext: org.webrtc.EglBase.Context,
 ) {
+    // Recorder が横向きになったときは、こちらの表示も横長に追従させたい。
+    // SurfaceViewRenderer の RendererEvents が、実際に届いたフレームの
+    // 向き込みのサイズ（width/height + rotation）を教えてくれるので、それで比率を更新する。
+    var aspectRatio by remember { mutableFloatStateOf(9f / 16f) }
+
     if (videoTrack == null) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(9f / 16f)
+                .aspectRatio(aspectRatio)
                 .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
@@ -214,13 +220,30 @@ private fun RemoteVideo(
     AndroidView(
         factory = { context ->
             SurfaceViewRenderer(context).apply {
-                init(eglBaseContext, null)
+                init(
+                    eglBaseContext,
+                    object : RendererCommon.RendererEvents {
+                        override fun onFirstFrameRendered() = Unit
+                        override fun onFrameResolutionChanged(
+                            videoWidth: Int,
+                            videoHeight: Int,
+                            rotation: Int,
+                        ) {
+                            val rotated = rotation == 90 || rotation == 270
+                            val width = if (rotated) videoHeight else videoWidth
+                            val height = if (rotated) videoWidth else videoHeight
+                            if (width > 0 && height > 0) {
+                                aspectRatio = width.toFloat() / height.toFloat()
+                            }
+                        }
+                    },
+                )
                 setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
             }
         },
         update = { view -> videoTrack.addSink(view) },
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(9f / 16f),
+            .aspectRatio(aspectRatio),
     )
 }

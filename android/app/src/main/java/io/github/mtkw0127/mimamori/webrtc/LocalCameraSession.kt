@@ -82,6 +82,19 @@ class LocalCameraSession @Inject constructor(
     private var boundCamera: Camera? = null
     private var zoomStateObserver: Observer<ZoomState>? = null
 
+    /**
+     * 今の端末の向き（[android.view.Surface.ROTATION_0] など）。[updateDeviceRotation] で随時更新する。
+     *
+     * ⚠️ これを [ImageAnalysis.setTargetRotation] 経由で CameraX 側に教える、というのが素直な
+     * やり方に見えるが、bind 済みのカメラに一切触れず向きの補正だけ更新したいので、CameraX には
+     * 渡さない。センサーの向き（[sensorOrientation]、bind 時に一度取得するだけで固定）とこの値から、
+     * 送る [VideoFrame] の回転量を自分で計算する（[rotationDegreesFor]）。
+     */
+    private var deviceRotation: Int = android.view.Surface.ROTATION_0
+
+    /** 今のレンズのセンサー向き（度）。`bind` のたびに取得し直す。回転時には変わらない */
+    private var sensorOrientation: Int = 0
+
     data class CameraOption(
         val deviceName: String,
         val isFrontFacing: Boolean,
@@ -125,6 +138,15 @@ class LocalCameraSession @Inject constructor(
         camera.cameraControl.setZoomRatio(ratio.coerceIn(zoom.minRatio, zoom.maxRatio))
     }
 
+    /**
+     * 端末の回転（[android.view.Surface.ROTATION_0] など）が変わるたびに呼ぶ。
+     * カメラには一切触れない（上の [deviceRotation] のコメント参照）ので、
+     * 送信中の [VideoTrack] を切らずに、次に送るフレームから向きの補正だけ更新できる。
+     */
+    fun updateDeviceRotation(rotation: Int) {
+        deviceRotation = rotation
+    }
+
     fun stop() {
         detachZoomObserver()
         boundCamera = null
@@ -166,6 +188,10 @@ class LocalCameraSession @Inject constructor(
                     .build(),
             )
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            // 固定値を明示的に渡しておく。何も渡さないと、CameraX が内部でディスプレイの回転を
+            // 監視して targetRotation を自動更新してしまう（＝カメラに無用な再設定がかかる余地を
+            // 残す）。向きの補正は常にこちら側（[rotationDegreesFor]）で計算するので、ここは固定でよい。
+            .setTargetRotation(android.view.Surface.ROTATION_0)
             .build()
         analysis.setAnalyzer(executor) { image -> analyzeFrame(image, capturerObserver) }
 
@@ -178,6 +204,8 @@ class LocalCameraSession @Inject constructor(
         boundCamera = camera
         attachZoomObserver(camera)
         val isFront = isFrontFacing(camera)
+        sensorOrientation = Camera2CameraInfo.from(camera.cameraInfo)
+            .getCameraCharacteristic(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
 
         capturerObserver.onCapturerStarted(true)
         _isFrontFacingCamera.value = isFront
@@ -205,9 +233,10 @@ class LocalCameraSession @Inject constructor(
 
     private fun analyzeFrame(image: ImageProxy, capturerObserver: CapturerObserver) {
         try {
+            val rotationDegrees = rotationDegreesFor(sensorOrientation, deviceRotation, _isFrontFacingCamera.value == true)
             val frame = VideoFrame(
                 image.toI420Buffer(),
-                image.imageInfo.rotationDegrees,
+                rotationDegrees,
                 image.imageInfo.timestamp
             )
             capturerObserver.onFrameCaptured(frame)
@@ -216,6 +245,25 @@ class LocalCameraSession @Inject constructor(
             Timber.w(e, "failed to convert a camera frame")
         } finally {
             image.close()
+        }
+    }
+
+    /**
+     * センサーの向きと今の端末の向きから、映像を正立させるのに必要な回転量を計算する
+     * （Camera2 の定番の式。CameraX が内部で [ImageAnalysis.targetRotation] から計算している
+     * のと同じもので、ここでは CameraX に触れず自前で計算する）。
+     */
+    private fun rotationDegreesFor(sensorOrientation: Int, deviceRotation: Int, isFrontFacing: Boolean): Int {
+        val deviceDegrees = when (deviceRotation) {
+            android.view.Surface.ROTATION_90 -> 90
+            android.view.Surface.ROTATION_180 -> 180
+            android.view.Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        return if (isFrontFacing) {
+            (sensorOrientation + deviceDegrees) % 360
+        } else {
+            (sensorOrientation - deviceDegrees + 360) % 360
         }
     }
 

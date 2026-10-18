@@ -94,6 +94,8 @@ class RecorderViewModel @Inject constructor(
 
     fun setZoomRatio(ratio: Float) = cameraSession.setZoomRatio(ratio)
 
+    fun updateRotation(rotation: Int) = cameraSession.updateDeviceRotation(rotation)
+
     /**
      * mDNS での告知と、Viewer からの TCP 接続の待ち受けを始める。
      * 複数回呼ばれても（画面の再コンポーズなどで）1回しか始めないようにしている。

@@ -54,7 +54,11 @@ class ViewerNsdDiscoverer @Inject constructor(
             trySend(found.values.toList())
         }
 
-        val resolveListener = object : NsdManager.ResolveListener {
+        // [NsdManager.resolveService] は呼ぶたびに新しい [NsdManager.ResolveListener] インスタンスを
+        // 要求する。同じインスタンスを使い回すと、前の resolve が終わる前に次が来たときに
+        // `IllegalArgumentException: listener already in use` でクラッシュする
+        // （Recorder が複数台同時に見つかったときに実際に踏んだ）。
+        fun newResolveListener(): NsdManager.ResolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
                 Timber.w("mDNS resolve failed for %s: errorCode=%d", info.serviceName, errorCode)
             }
@@ -82,7 +86,7 @@ class ViewerNsdDiscoverer @Inject constructor(
 
             override fun onServiceFound(info: NsdServiceInfo) {
                 // onServiceFound の時点ではまだ IP アドレスが無いので、resolve して初めて使える
-                nsdManager.resolveService(info, resolveListener)
+                nsdManager.resolveService(info, newResolveListener())
             }
 
             override fun onServiceLost(info: NsdServiceInfo) {
