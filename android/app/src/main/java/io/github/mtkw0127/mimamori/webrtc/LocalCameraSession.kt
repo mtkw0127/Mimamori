@@ -213,9 +213,21 @@ class LocalCameraSession @Inject constructor(
         _videoTrack.value = _videoTrack.value ?: factory.createVideoTrack("VIDEO_TRACK_ID", source)
     }
 
-    /** レンズを切り替えるたびに、そのレンズのズーム範囲を [zoomInfo] に反映させる */
+    /**
+     * レンズを切り替えるたびに、そのレンズのズーム範囲を [zoomInfo] に反映させる。
+     *
+     * あわせて、最初はそのレンズで一番広く写る倍率（最小倍率）から始める。CameraX の初期値は 1.0 倍だが、
+     * 超広角を論理カメラにまとめている端末では最小倍率が 0.5 倍などになっていて、部屋全体を
+     * 見渡したい見守り用途では、最初から一番広い画角の方が使いやすい。
+     * zoomState は bind 直後だとまだ値が入っていないことがあるので、最初に届いた値で設定する。
+     */
     private fun attachZoomObserver(camera: Camera) {
+        var initialZoomApplied = false
         val observer = Observer<ZoomState> { state ->
+            if (!initialZoomApplied) {
+                initialZoomApplied = true
+                camera.cameraControl.setZoomRatio(state.minZoomRatio)
+            }
             _zoomInfo.value = ZoomInfo(state.zoomRatio, state.minZoomRatio, state.maxZoomRatio)
         }
         zoomStateObserver = observer
